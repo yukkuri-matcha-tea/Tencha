@@ -1,0 +1,22 @@
+# Gradle
+.gradle/
+.kotlin/
+build/
+
+# Android Studio
+.idea/
+*.iml
+*.iws
+
+# Android
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Output
+*.apk
+*.aar
+*.jar
+app/release/
+patched-line/

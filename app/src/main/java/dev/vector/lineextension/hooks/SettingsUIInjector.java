@@ -1,0 +1,1856 @@
+package dev.vector.lineextension.hooks;
+
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.app.Dialog;
+import android.content.Context;
+import android.content.ContextWrapper;
+import android.content.Intent;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowManager;
+import android.view.animation.DecelerateInterpolator;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.RelativeLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
+import dev.vector.lineextension.BuildConfig;
+import dev.vector.lineextension.LineVersion;
+import dev.vector.lineextension.LoadParam;
+import dev.vector.lineextension.Main;
+import dev.vector.lineextension.Reflect;
+import dev.vector.lineextension.SettingsStore;
+import dev.vector.lineextension.Vector;
+import dev.vector.lineextension.VectorConfig;
+import dev.vector.lineextension.core.RuntimeReporter;
+import dev.vector.lineextension.utils.LineTheme;
+import dev.vector.lineextension.utils.ModuleStrings;
+import io.github.libxposed.api.XposedInterface;
+import java.io.File;
+import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+
+public class SettingsUIInjector implements BaseHook {
+
+  private static final String BRAND_TAG = "Tencha";
+  private static final int PICK_DIRECTORY_CODE = 0x4C58;
+  private static final int PICK_FONT_CODE = 0x4C59;
+  private static final int PICK_RESTORE_DB_CODE = 0x4C5A;
+  private static final VectorConfig.Category[] DISPLAY_CATEGORIES = {
+    VectorConfig.Category.PRIVACY,
+    VectorConfig.Category.CHAT,
+    VectorConfig.Category.DISPLAY,
+    VectorConfig.Category.NOTIFICATION,
+    VectorConfig.Category.SYSTEM,
+    VectorConfig.Category.DEVELOPER
+  };
+
+  public static volatile Runnable openSettingsAction = null;
+  private static volatile java.lang.ref.WeakReference<Activity> foregroundActivity = null;
+  private static volatile SettingsUIInjector instance = null;
+  private static volatile Object cachedToggle = null;
+  private static volatile Object cachedSuccess = null;
+  private static final java.util.List<Runnable> uiUpdateCallbacks = new java.util.ArrayList<>();
+
+  private volatile Runnable onSettingsReloadRequest = null;
+  private volatile Object targetAdapter = null;
+  private volatile Object targetFragment = null;
+  private volatile Dialog settingsDialog = null;
+  private volatile Activity dialogHost = null;
+  private volatile boolean pendingRestart = false;
+  private volatile VectorConfig.Category currentActiveCategory = null;
+  private volatile boolean aboutPageActive = false;
+  private volatile FrameLayout cachedPageContainer = null;
+  private volatile View aboutPageView = null;
+  private volatile FrameLayout cachedItemHost = null;
+  private volatile View cachedNavHeader = null;
+  private volatile View cachedSearchView = null;
+
+  public static void openSettings(android.app.Activity activity) {
+    SettingsUIInjector ui = instance;
+    if (ui != null) ui.displaySettingsDialog(activity);
+  }
+
+  @Override
+  public void hook(VectorConfig config, LoadParam lpparam) throws Throwable {
+    instance = this;
+    LineVersion.Config cfg = LineVersion.get();
+
+    hookSettingsFragment(cfg, lpparam);
+    hookSettingsItemInjection(cfg, lpparam);
+    hookViewHolderBinding(cfg, lpparam);
+    hookActivityResult();
+    hookHostLifecycle();
+  }
+
+  private void hookSettingsFragment(LineVersion.Config cfg, LoadParam lpparam) {
+    Class<?> fragmentClass =
+        Reflect.findClass(cfg.settings.mainSettingsFragmentClass, lpparam.classLoader);
+    Vector.module
+        .hook(Reflect.findMethodExact(fragmentClass, "onViewCreated", View.class, Bundle.class))
+        .intercept(this::onSettingsFragmentViewCreated);
+  }
+
+  private void hookSettingsItemInjection(LineVersion.Config cfg, LoadParam lpparam) {
+    final Class<?> proxyInterface =
+        Reflect.findClass(cfg.settings.settingsItemClass, lpparam.classLoader);
+    final Class<?> searchHelperCls =
+        Reflect.findClass(cfg.settings.settingsSearchHelperClass, lpparam.classLoader);
+    Vector.module
+        .hook(
+            Reflect.findMethodExact(
+                cfg.settings.settingsAdapterClass,
+                lpparam.classLoader,
+                cfg.settings.methodSetItems,
+                Collection.class))
+        .intercept(chain -> injectVectorItems(chain, proxyInterface, searchHelperCls, lpparam));
+  }
+
+  private void hookViewHolderBinding(LineVersion.Config cfg, LoadParam lpparam) {
+    final Class<?> searchHelperCls =
+        Reflect.findClass(cfg.settings.settingsSearchHelperClass, lpparam.classLoader);
+    Class<?> itemBindingClass =
+        Reflect.findClass(cfg.settings.settingsBaseAdapterClass, lpparam.classLoader);
+    Vector.module
+        .hook(
+            Reflect.findMethodExact(
+                cfg.settings.settingsSearchHelperClass,
+                lpparam.classLoader,
+                cfg.settings.methodBindViewHolder,
+                itemBindingClass,
+                int.class))
+        .intercept(chain -> bindVectorViewHolder(chain, searchHelperCls));
+  }
+
+  private void hookActivityResult() {
+    Vector.module
+        .hook(
+            Reflect.findMethodExact(
+                android.app.Activity.class, "onActivityResult", int.class, int.class, Intent.class))
+        .intercept(this::handleActivityResult);
+  }
+
+  private void hookHostLifecycle() {
+    Vector.module
+        .hook(Reflect.findMethodExact(android.app.Activity.class, "onDestroy"))
+        .intercept(this::onHostDestroy);
+    Vector.module
+        .hook(Reflect.findMethodExact(android.app.Activity.class, "onResume"))
+        .intercept(this::onHostResume);
+  }
+
+  private void dismissSettingsImmediately() {
+    Dialog d = settingsDialog;
+    if (d == null || !d.isShowing()) return;
+    try {
+      d.dismiss();
+    } catch (Throwable ignored) {
+    }
+    settingsDialog = null;
+    dialogHost = null;
+    currentActiveCategory = null;
+    aboutPageActive = false;
+    cachedPageContainer = null;
+    aboutPageView = null;
+    cachedItemHost = null;
+    cachedNavHeader = null;
+    cachedSearchView = null;
+    uiUpdateCallbacks.clear();
+  }
+
+  private Object onSettingsFragmentViewCreated(XposedInterface.Chain chain) throws Throwable {
+    Object result = chain.proceed();
+    try {
+      LineVersion.Config c = LineVersion.get();
+      targetFragment = chain.getThisObject();
+      View listView = ((View) chain.getArg(0)).findViewById(c.res.idSettingList);
+      if (listView != null) targetAdapter = Reflect.callMethod(listView, "getAdapter");
+      openSettingsAction =
+          () ->
+              displaySettingsDialog((Context) Reflect.callMethod(targetFragment, "requireContext"));
+    } catch (Throwable ignored) {
+    }
+    return result;
+  }
+
+  private Object injectVectorItems(
+      XposedInterface.Chain chain,
+      Class<?> proxyInterface,
+      Class<?> searchHelperCls,
+      LoadParam lpparam)
+      throws Throwable {
+    LineVersion.Config c = LineVersion.get();
+    Collection<?> sourceItems = (Collection<?>) chain.getArg(0);
+    if (chain.getThisObject() != targetAdapter
+        && !searchHelperCls.isInstance(chain.getThisObject())) {
+      return chain.proceed();
+    }
+    if (containsVectorItem(sourceItems, c)) return chain.proceed();
+
+    List<Object> items = new ArrayList<>(sourceItems);
+    int insertPos = items.size();
+    findPosition:
+    for (int i = 0; i < items.size(); i++) {
+      try {
+        Object model = Reflect.getObjectField(items.get(i), c.settings.fieldItemModel);
+        if (model == null) continue;
+        for (java.lang.reflect.Field f : model.getClass().getDeclaredFields()) {
+          if (f.getType() == int.class) {
+            f.setAccessible(true);
+            if (f.getInt(model) == c.res.idPersonalInfo) {
+              insertPos = i;
+              break findPosition;
+            }
+          }
+        }
+      } catch (Throwable ignored) {
+      }
+    }
+    Object section = createAdapterItemProxy(proxyInterface, lpparam.classLoader, c.res.typeSection);
+    Object row = createAdapterItemProxy(proxyInterface, lpparam.classLoader, c.res.typeRow);
+
+    if (c.settings.settingsAdapterWrapperClass != null
+        && !c.settings.settingsAdapterWrapperClass.isEmpty()) {
+      try {
+        Class<?> wrapperCls =
+            Reflect.findClass(c.settings.settingsAdapterWrapperClass, lpparam.classLoader);
+        Class<?> headerCls =
+            Reflect.findClass(c.settings.settingsHeaderItemClass, lpparam.classLoader);
+        Class<?> itemCls = Reflect.findClass(c.settings.settingsRowItemClass, lpparam.classLoader);
+
+        Class<?> unsafeCls = Reflect.findClass("sun.misc.Unsafe", (ClassLoader) null);
+        Object unsafe = Reflect.getStaticObjectField(unsafeCls, "theUnsafe");
+
+        Object dummyHeader = Reflect.callMethod(unsafe, "allocateInstance", headerCls);
+        Object dummyRow = Reflect.callMethod(unsafe, "allocateInstance", itemCls);
+
+        Reflect.setIntField(dummyHeader, c.settings.fieldLayoutId, c.res.typeSection);
+        Reflect.setIntField(dummyRow, c.settings.fieldLayoutId, c.res.typeRow);
+
+        section = Reflect.newInstance(wrapperCls, dummyHeader);
+        row = Reflect.newInstance(wrapperCls, dummyRow);
+
+        Reflect.setObjectField(dummyHeader, c.settings.fieldModelTag, BRAND_TAG);
+        Reflect.setObjectField(dummyRow, c.settings.fieldModelTag, BRAND_TAG);
+
+        Reflect.setBooleanField(dummyHeader, c.settings.fieldIsVisible, true);
+
+        Class<?> bc = Reflect.findClass(c.settings.settingsHandlerBaseClass, lpparam.classLoader);
+        Object dummyHandler = Reflect.getStaticObjectField(bc, c.settings.fieldDefaultHandler);
+
+        String[] handlerFields = {
+          c.settings.fieldActionHandler,
+          c.settings.fieldIconProvider,
+          c.settings.fieldDescriptionProvider,
+          c.settings.fieldSubActionHandler,
+          c.settings.fieldVisibilityFilter
+        };
+        for (String f : handlerFields) {
+          try {
+            Reflect.setObjectField(dummyRow, f, dummyHandler);
+            Reflect.setObjectField(dummyHeader, f, dummyHandler);
+          } catch (Throwable ignored) {
+          }
+        }
+
+        Reflect.setObjectField(
+            dummyRow,
+            c.settings.fieldVisibilityFilter,
+            Reflect.getStaticObjectField(bc, c.settings.fieldCommonHandler));
+        Reflect.setObjectField(
+            dummyHeader,
+            c.settings.fieldVisibilityFilter,
+            Reflect.getStaticObjectField(bc, c.settings.fieldCommonHandler));
+      } catch (Throwable e) {
+        Vector.log("Tencha: Adapter wrapper failed: " + e);
+      }
+    }
+
+    items.add(insertPos, section);
+    items.add(insertPos + 1, row);
+    return chain.proceed(new Object[] {items});
+  }
+
+  private Object bindVectorViewHolder(XposedInterface.Chain chain, Class<?> searchHelperCls)
+      throws Throwable {
+    if (chain.getThisObject() != targetAdapter
+        && !searchHelperCls.isInstance(chain.getThisObject())) {
+      return chain.proceed();
+    }
+    LineVersion.Config c = LineVersion.get();
+    int currentPos = (int) chain.getArg(1);
+    boolean ours = false;
+    try {
+      Object currentItem =
+          Reflect.callMethod(chain.getThisObject(), c.settings.methodGetItem, currentPos);
+      if (currentItem == null) return chain.proceed();
+      if (currentItem.getClass().getName().equals(c.settings.settingsAdapterWrapperClass)) {
+        currentItem = Reflect.getObjectField(currentItem, c.settings.fieldItemModel);
+      }
+      if (currentItem == null) return chain.proceed();
+
+      String sourceTag = (String) Reflect.getObjectField(currentItem, c.settings.fieldModelTag);
+      if (!BRAND_TAG.equals(sourceTag)) return chain.proceed();
+
+      ours = true;
+
+      int entryType = Reflect.getIntField(currentItem, c.settings.fieldLayoutId);
+      View itemView =
+          (View) Reflect.getObjectField(chain.getArg(0), c.settings.fieldViewHolderView);
+      if (entryType == c.res.typeSection) {
+        if (itemView instanceof TextView) ((TextView) itemView).setText(BRAND_TAG);
+      } else if (entryType == c.res.typeRow) {
+        bindVectorSettingsRow(itemView, c);
+      }
+    } catch (Throwable ignored) {
+    }
+    return ours ? null : chain.proceed();
+  }
+
+  private void bindVectorSettingsRow(View itemView, LineVersion.Config c) {
+    RuntimeReporter.working("line_settings_ui", "LINE設定内の拡張入口をRuntime確認");
+    applyVisibility(itemView, c.res.idIcon, View.VISIBLE);
+    applyVisibility(itemView, c.res.idDesc, View.GONE);
+    applyVisibility(itemView, c.res.idMark, View.GONE);
+    applyVisibility(itemView, c.res.idSeparator, View.GONE);
+    applyVisibility(itemView, c.res.idNewMark, View.GONE);
+    applyVisibility(itemView, c.res.idNoticeDot, View.GONE);
+    applyVisibility(itemView, c.res.idArrow, View.VISIBLE);
+
+    ImageView iconView = itemView.findViewById(c.res.idIcon);
+    if (iconView != null) applyVectorIcon(itemView, iconView);
+
+    TextView title = itemView.findViewById(c.res.idTitle);
+    if (title != null) title.setText(ModuleStrings.SETTINGS_TITLE);
+    itemView.setOnClickListener(v -> displaySettingsDialog(v.getContext()));
+  }
+
+  private void applyVectorIcon(View itemView, ImageView iconView) {
+    try {
+      Context modCtx =
+          itemView
+              .getContext()
+              .createPackageContext("dev.vector.lineextension", Context.CONTEXT_IGNORE_SECURITY);
+      int resId =
+          modCtx
+              .getResources()
+              .getIdentifier("ic_tencha_settings", "drawable", "dev.vector.lineextension");
+      if (resId == 0) return;
+
+      iconView.setImageDrawable(modCtx.getDrawable(resId));
+      iconView.setColorFilter(
+          LineTheme.primaryTextColor(itemView.getContext()),
+          android.graphics.PorterDuff.Mode.SRC_IN);
+      iconView.setVisibility(View.VISIBLE);
+
+      float density = itemView.getContext().getResources().getDisplayMetrics().density;
+      int size = (int) (24 * density);
+      ViewGroup.LayoutParams lp = iconView.getLayoutParams();
+      if (lp != null) {
+        lp.width = size;
+        lp.height = size;
+        iconView.setLayoutParams(lp);
+      }
+      iconView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+    } catch (Throwable ignored) {
+    }
+  }
+
+  private Object handleActivityResult(XposedInterface.Chain chain) throws Throwable {
+    int requestCode = (int) chain.getArg(0);
+    if (requestCode == PICK_DIRECTORY_CODE) {
+      handleDirectoryPicked(chain);
+      return null;
+    } else if (requestCode == PICK_FONT_CODE) {
+      handleFontPicked(chain);
+      return null;
+    } else if (requestCode == PICK_RESTORE_DB_CODE) {
+      handleRestoreDbPicked(chain);
+      return null;
+    }
+    return chain.proceed();
+  }
+
+  private void handleDirectoryPicked(XposedInterface.Chain chain) {
+    if ((int) chain.getArg(1) != Activity.RESULT_OK || chain.getArg(2) == null) return;
+    Uri treeUri = ((Intent) chain.getArg(2)).getData();
+    if (treeUri == null) return;
+    try {
+      ((Activity) chain.getThisObject())
+          .getContentResolver()
+          .takePersistableUriPermission(
+              treeUri,
+              Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+    } catch (Throwable ignored) {
+    }
+    SettingsStore.setSettingsDir(treeUri.toString());
+    SettingsStore.load(Main.options);
+    pendingRestart = true;
+    if (onSettingsReloadRequest != null) onSettingsReloadRequest.run();
+  }
+
+  private void handleFontPicked(XposedInterface.Chain chain) {
+    if ((int) chain.getArg(1) != Activity.RESULT_OK || chain.getArg(2) == null) return;
+    Uri fontUri = ((Intent) chain.getArg(2)).getData();
+    if (fontUri == null) return;
+    try {
+      Context ctx = (Context) chain.getThisObject();
+      java.io.InputStream is = ctx.getContentResolver().openInputStream(fontUri);
+      File out = new File(ctx.getFilesDir(), "vector_custom_font.ttf");
+      java.io.FileOutputStream os = new java.io.FileOutputStream(out);
+      byte[] buffer = new byte[8192];
+      int len;
+      while ((len = is.read(buffer)) != -1) os.write(buffer, 0, len);
+      os.close();
+      is.close();
+
+      String localPath = out.getAbsolutePath();
+      SettingsStore.save("custom_font_path", localPath);
+      for (VectorConfig.Item itm : Main.options.items) {
+        if (itm.key.equals("custom_font_path")) {
+          itm.value = localPath;
+          break;
+        }
+      }
+      pendingRestart = true;
+      if (onSettingsReloadRequest != null) onSettingsReloadRequest.run();
+    } catch (Throwable t) {
+      Vector.log("Tencha: Failed to copy font file: " + t.getMessage());
+    }
+  }
+
+  private void handleRestoreDbPicked(XposedInterface.Chain chain) {
+    if ((int) chain.getArg(1) != Activity.RESULT_OK || chain.getArg(2) == null) return;
+    Uri dbUri = ((Intent) chain.getArg(2)).getData();
+    if (dbUri == null) return;
+    Context ctx = (Context) chain.getThisObject();
+    new Thread(() -> prepareRestoreDb(ctx, dbUri)).start();
+  }
+
+  private void prepareRestoreDb(Context ctx, Uri dbUri) {
+    File tempFile = null;
+    try {
+      tempFile = File.createTempFile("vector_restore_", ".db", ctx.getCacheDir());
+      try (java.io.InputStream is = ctx.getContentResolver().openInputStream(dbUri);
+          java.io.FileOutputStream os = new java.io.FileOutputStream(tempFile)) {
+        byte[] buffer = new byte[8192];
+        int len;
+        while ((len = is.read(buffer)) != -1) os.write(buffer, 0, len);
+      }
+      final File finalFile = tempFile;
+      new Handler(Looper.getMainLooper()).post(() -> confirmRestore(ctx, finalFile));
+    } catch (Throwable t) {
+      Vector.log("Tencha: Failed to prepare restore DB: " + t.getMessage());
+      if (tempFile != null) tempFile.delete();
+    }
+  }
+
+  private void confirmRestore(Context ctx, File file) {
+    int themeId = LineTheme.dialogTheme(ctx);
+    LineTheme.applyDialogColors(
+        new AlertDialog.Builder(ctx, themeId)
+            .setTitle(ModuleStrings.RESTORE_CONFIRM_TITLE)
+            .setMessage(ModuleStrings.RESTORE_CONFIRM_MSG)
+            .setPositiveButton(
+                ModuleStrings.SETTINGS_YES, (d, w) -> BackupRestoreHook.runRestore(ctx, file))
+            .setNegativeButton(ModuleStrings.SETTINGS_CANCEL, (d, w) -> file.delete())
+            .show(),
+        ctx);
+  }
+
+  private Object onHostDestroy(XposedInterface.Chain chain) throws Throwable {
+    if (chain.getThisObject() == dialogHost) {
+      try {
+        Dialog d = settingsDialog;
+        if (d != null && d.isShowing()) d.dismiss();
+      } catch (Throwable ignored) {
+      }
+      settingsDialog = null;
+      dialogHost = null;
+    }
+    return chain.proceed();
+  }
+
+  private Object onHostResume(XposedInterface.Chain chain) throws Throwable {
+    foregroundActivity = new java.lang.ref.WeakReference<>((Activity) chain.getThisObject());
+    if (dialogHost != null && chain.getThisObject() != dialogHost) {
+      dismissSettingsImmediately();
+    }
+    return chain.proceed();
+  }
+
+  public static Activity getForegroundActivity() {
+    java.lang.ref.WeakReference<Activity> ref = foregroundActivity;
+    Activity activity = ref == null ? null : ref.get();
+    return activity == null || activity.isFinishing() ? null : activity;
+  }
+
+  private void displaySettingsDialog(Context ctx) {
+    if (settingsDialog != null && settingsDialog.isShowing()) return;
+    try {
+      Activity host = resolveActivity(ctx);
+      if (host == null) return;
+      LineTheme.invalidate();
+      cacheUiConstants(host);
+      SettingsStore.init(host);
+      SettingsStore.load(Main.options);
+      pendingRestart = false;
+      boolean isDark = LineTheme.isDark(host);
+
+      Dialog dialog =
+          new Dialog(host, android.R.style.Theme_DeviceDefault_NoActionBar) {
+            @Override
+            public void onBackPressed() {
+              if (aboutPageActive) {
+                closeAboutPage(host);
+              } else if (currentActiveCategory != null) {
+                switchPage(host, cachedToggle, cachedSuccess, null);
+              } else {
+                initiateDialogClosure();
+              }
+            }
+          };
+      settingsDialog = dialog;
+      dialogHost = host;
+      dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+      View content = createSettingsView(host, cachedToggle, cachedSuccess, dialog.getWindow());
+
+      dialog.setContentView(content);
+
+      Window win = dialog.getWindow();
+      if (win != null) {
+        win.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        win.setDimAmount(0);
+        win.setLayout(
+            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
+        win.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        win.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        win.setStatusBarColor(Color.TRANSPARENT);
+        int visibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
+        if (!isDark && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+          visibility |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        }
+        if (!isDark && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+          visibility |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        }
+        win.getDecorView().setSystemUiVisibility(visibility);
+        win.getDecorView().setPadding(0, 0, 0, 0);
+        win.getDecorView().requestApplyInsets();
+      }
+
+      content.setTranslationX(host.getResources().getDisplayMetrics().widthPixels);
+      dialog.show();
+      content
+          .animate()
+          .translationX(0)
+          .setDuration(300)
+          .setInterpolator(new DecelerateInterpolator())
+          .start();
+    } catch (Throwable e) {
+      Vector.log("Tencha: Dialog display failed: " + e.getMessage());
+    }
+  }
+
+  private void initiateDialogClosure() {
+    if (settingsDialog == null || !settingsDialog.isShowing()) return;
+
+    if (pendingRestart) {
+      int themeId = LineTheme.dialogTheme(settingsDialog.getContext());
+      LineTheme.applyDialogColors(
+          new AlertDialog.Builder(settingsDialog.getContext(), themeId)
+              .setTitle(ModuleStrings.RESTART_TITLE)
+              .setMessage(ModuleStrings.RESTART_MESSAGE)
+              .setPositiveButton(ModuleStrings.RESTART_OK, (d, w) -> System.exit(0))
+              .setNegativeButton(
+                  ModuleStrings.RESTART_LATER,
+                  (d, w) -> {
+                    pendingRestart = false;
+                    initiateDialogClosure();
+                  })
+              .show(),
+          settingsDialog.getContext());
+      return;
+    }
+
+    LineVersion.Config currentCfg = LineVersion.get();
+    View topHeader = settingsDialog.findViewById(currentCfg.res.idHeader);
+    if (topHeader == null) {
+      settingsDialog.dismiss();
+      settingsDialog = null;
+      dialogHost = null;
+      return;
+    }
+    View rootPane = topHeader.getRootView();
+    rootPane
+        .animate()
+        .translationX(rootPane.getWidth())
+        .setDuration(250)
+        .setInterpolator(new DecelerateInterpolator())
+        .withEndAction(
+            () -> {
+              settingsDialog.dismiss();
+              settingsDialog = null;
+              dialogHost = null;
+              currentActiveCategory = null;
+              aboutPageActive = false;
+              cachedPageContainer = null;
+              aboutPageView = null;
+              cachedItemHost = null;
+              cachedNavHeader = null;
+              cachedSearchView = null;
+              uiUpdateCallbacks.clear();
+            })
+        .start();
+  }
+
+  private View createSettingsView(Activity host, Object toggleType, Object statusEnum, Window win) {
+    try {
+      LineVersion.Config currentCfg = LineVersion.get();
+      LayoutInflater infl = LayoutInflater.from(host);
+      ViewGroup hostContainer = (ViewGroup) infl.inflate(currentCfg.res.layoutSettingsMain, null);
+      hostContainer.setClickable(true);
+      hostContainer.setFocusable(true);
+      hostContainer.setPadding(0, 0, 0, 0);
+      uiUpdateCallbacks.clear();
+
+      removeComposeHeader(host, hostContainer);
+
+      View navHeader = hostContainer.findViewById(currentCfg.res.idHeader);
+      if (navHeader != null) setupNavHeader(host, navHeader, win, currentCfg);
+
+      View itemListView = hostContainer.findViewById(currentCfg.res.idSettingList);
+      if (itemListView != null) {
+        installSettingsBody(host, hostContainer, itemListView, navHeader, toggleType, statusEnum);
+      }
+      return hostContainer;
+    } catch (Throwable t) {
+      TextView errorLabel = new TextView(host);
+      errorLabel.setText("Error: " + t.getMessage());
+      return errorLabel;
+    }
+  }
+
+  private void removeComposeHeader(Activity host, ViewGroup hostContainer) {
+    try {
+      int composeHeaderId =
+          host.getResources().getIdentifier("compose_header", "id", "jp.naver.line.android");
+      if (composeHeaderId != 0) {
+        View composeHeader = hostContainer.findViewById(composeHeaderId);
+        if (composeHeader != null && composeHeader.getParent() instanceof ViewGroup)
+          ((ViewGroup) composeHeader.getParent()).removeView(composeHeader);
+      }
+    } catch (Throwable ignored) {
+    }
+  }
+
+  private void setupNavHeader(
+      Activity host, View navHeader, Window win, LineVersion.Config currentCfg) {
+    try {
+      Reflect.callMethod(navHeader, currentCfg.main.methodRefreshNavHeader, win);
+    } catch (Throwable t) {
+      if (currentCfg.res.idStatusBarGuide != 0) {
+        View guide = navHeader.findViewById(currentCfg.res.idStatusBarGuide);
+        if (guide != null) {
+          int statusBarHeight = 0;
+          int resId = host.getResources().getIdentifier("status_bar_height", "dimen", "android");
+          if (resId > 0) statusBarHeight = host.getResources().getDimensionPixelSize(resId);
+          if (statusBarHeight > 0) {
+            ViewGroup.LayoutParams lp = guide.getLayoutParams();
+            lp.height = statusBarHeight;
+            guide.setLayoutParams(lp);
+          }
+        }
+      }
+    }
+    Reflect.callMethod(
+        navHeader, currentCfg.main.methodHeaderSetTitle, ModuleStrings.SETTINGS_TITLE);
+    try {
+      Reflect.callMethod(navHeader, currentCfg.main.methodHeaderSetButtonVisibility, true);
+    } catch (Throwable ignored) {
+    }
+    Reflect.callMethod(
+        navHeader,
+        currentCfg.main.methodHeaderSetButtonListener,
+        (View.OnClickListener) v -> initiateDialogClosure());
+
+    navHeader.setBackgroundColor(LineTheme.backgroundColor(host));
+    LineTheme.tintTextAndIcons(navHeader, LineTheme.primaryTextColor(host));
+  }
+
+  private void installSettingsBody(
+      Activity host,
+      ViewGroup hostContainer,
+      View itemListView,
+      View navHeader,
+      Object toggleType,
+      Object statusEnum) {
+    ViewGroup viewParent = (ViewGroup) itemListView.getParent();
+    int viewIndex = viewParent.indexOfChild(itemListView);
+    ViewGroup.LayoutParams viewLp = itemListView.getLayoutParams();
+    viewParent.removeView(itemListView);
+
+    LinearLayout settingsRoot = new LinearLayout(host);
+    settingsRoot.setOrientation(LinearLayout.VERTICAL);
+    settingsRoot.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
+
+    final FrameLayout itemHost = new FrameLayout(host);
+    itemHost.addView(renderSettingsItems(host, toggleType, statusEnum, null, false));
+    cachedItemHost = itemHost;
+    cachedNavHeader = navHeader;
+
+    setupSearchBox(host, settingsRoot, itemHost, toggleType, statusEnum);
+
+    settingsRoot.addView(itemHost, new LinearLayout.LayoutParams(-1, -1));
+
+    FrameLayout pageContainer = new FrameLayout(host);
+    pageContainer.addView(settingsRoot);
+    cachedPageContainer = pageContainer;
+    viewParent.addView(pageContainer, viewIndex, viewLp);
+
+    hostContainer.setBackgroundColor(LineTheme.backgroundColor(host));
+  }
+
+  private void switchPage(
+      Context ctx, Object toggleType, Object statusEnum, VectorConfig.Category category) {
+    if (cachedItemHost == null || cachedNavHeader == null) return;
+
+    boolean isGoingForward = (category != null && currentActiveCategory == null);
+    currentActiveCategory = category;
+
+    final View oldView = cachedItemHost.getChildAt(0);
+    final View newView = renderSettingsItems(ctx, toggleType, statusEnum, category, false);
+
+    float width = cachedItemHost.getWidth();
+    newView.setTranslationX(isGoingForward ? width : -width);
+    cachedItemHost.addView(newView);
+
+    oldView
+        .animate()
+        .translationX(isGoingForward ? -width : width)
+        .setDuration(250)
+        .setInterpolator(new DecelerateInterpolator())
+        .start();
+
+    newView
+        .animate()
+        .translationX(0)
+        .setDuration(250)
+        .setInterpolator(new DecelerateInterpolator())
+        .withEndAction(
+            () -> {
+              cachedItemHost.removeView(oldView);
+            })
+        .start();
+
+    LineVersion.Config currentCfg = LineVersion.get();
+    String title = (category == null) ? ModuleStrings.SETTINGS_TITLE : category.label;
+    Reflect.callMethod(
+        cachedNavHeader, currentCfg.main.methodRefreshNavHeader, settingsDialog.getWindow());
+    Reflect.callMethod(cachedNavHeader, currentCfg.main.methodHeaderSetTitle, title);
+
+    Reflect.callMethod(
+        cachedNavHeader,
+        currentCfg.main.methodHeaderSetButtonListener,
+        (View.OnClickListener)
+            v -> {
+              if (currentActiveCategory != null) {
+                switchPage(ctx, toggleType, statusEnum, null);
+              } else {
+                initiateDialogClosure();
+              }
+            });
+
+    cachedNavHeader.setBackgroundColor(LineTheme.backgroundColor(ctx));
+    LineTheme.tintTextAndIcons(cachedNavHeader, LineTheme.primaryTextColor(ctx));
+  }
+
+  private View renderSettingsItems(
+      Context ctx,
+      Object toggleType,
+      Object statusEnum,
+      VectorConfig.Category targetCategory,
+      boolean showAll) {
+    LineVersion.Config currentCfg = LineVersion.get();
+    LayoutInflater infl = LayoutInflater.from(ctx);
+    int bgColor = LineTheme.backgroundColor(ctx);
+
+    ScrollView scroller = new ScrollView(ctx);
+    scroller.setBackgroundColor(bgColor);
+
+    LinearLayout mainList = new LinearLayout(ctx);
+    mainList.setOrientation(LinearLayout.VERTICAL);
+    mainList.setBackgroundColor(bgColor);
+
+    int bottomOffset =
+        (int)
+            TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, 64, ctx.getResources().getDisplayMetrics());
+    mainList.setPadding(0, 0, 0, bottomOffset);
+
+    if (targetCategory == null) {
+      if (showAll) {
+
+        for (VectorConfig.Category cat : DISPLAY_CATEGORIES) {
+          injectSectionHeader(infl, mainList, cat.label);
+          injectCategoryItems(infl, mainList, ctx, cat, currentCfg, toggleType, statusEnum);
+        }
+
+        injectBackupSection(infl, mainList, ctx);
+        injectOtherSection(infl, mainList, ctx, Main.options);
+      } else {
+        injectSectionHeader(infl, mainList, ModuleStrings.SETTINGS_TITLE);
+
+        for (VectorConfig.Category cat : DISPLAY_CATEGORIES) {
+          injectCategoryRow(infl, mainList, ctx, cat, toggleType, statusEnum);
+        }
+
+        injectBackupSection(infl, mainList, ctx);
+        injectOtherSection(infl, mainList, ctx, Main.options);
+      }
+    } else {
+      injectCategoryItems(infl, mainList, ctx, targetCategory, currentCfg, toggleType, statusEnum);
+    }
+
+    scroller.addView(mainList);
+    return scroller;
+  }
+
+  private View injectInfoRow(
+      LayoutInflater infl,
+      LinearLayout parent,
+      Context ctx,
+      CharSequence title,
+      CharSequence description,
+      boolean showArrow,
+      Integer titleColorOverride,
+      View.OnClickListener onClick) {
+    View row = LineTheme.createTextRow(ctx);
+    if (row != null) {
+      LineTheme.setRowTitle(row, title);
+      if (description != null && description.length() > 0) {
+        LineTheme.setRowDescription(row, description);
+      }
+      LineTheme.setRowArrowVisible(row, showArrow);
+      LineTheme.setRowDividerVisible(row, false);
+      if (titleColorOverride != null) LineTheme.setRowTitleColor(row, titleColorOverride);
+      if (onClick != null) row.setOnClickListener(onClick);
+      parent.addView(row);
+      return row;
+    }
+    return injectInfoRowFallback(
+        infl, parent, ctx, title, description, showArrow, titleColorOverride, onClick);
+  }
+
+  private View injectInfoRowFallback(
+      LayoutInflater infl,
+      LinearLayout parent,
+      Context ctx,
+      CharSequence title,
+      CharSequence description,
+      boolean showArrow,
+      Integer titleColorOverride,
+      View.OnClickListener onClick) {
+    LineVersion.Config currentCfg = LineVersion.get();
+    View row = infl.inflate(currentCfg.res.typeRow, parent, false);
+    applyNativeHighlight(row, ctx);
+    applyVisibility(row, currentCfg.res.idIcon, View.GONE);
+    applyVisibility(row, currentCfg.res.idMark, View.GONE);
+    applyVisibility(row, currentCfg.res.idSeparator, View.GONE);
+    applyVisibility(row, currentCfg.res.idNewMark, View.GONE);
+    applyVisibility(row, currentCfg.res.idNoticeDot, View.GONE);
+    applyVisibility(row, currentCfg.res.idArrow, showArrow ? View.VISIBLE : View.GONE);
+
+    TextView titleLabel = row.findViewById(currentCfg.res.idTitle);
+    if (titleLabel != null) {
+      titleLabel.setText(title);
+      titleLabel.setTextColor(
+          titleColorOverride != null ? titleColorOverride : LineTheme.primaryTextColor(ctx));
+    }
+    TextView descLabel = row.findViewById(currentCfg.res.idDesc);
+    if (descLabel != null) {
+      if (description != null && description.length() > 0) {
+        descLabel.setText(description);
+        descLabel.setTextColor(LineTheme.secondaryTextColor(ctx));
+        descLabel.setVisibility(View.VISIBLE);
+      } else {
+        descLabel.setVisibility(View.GONE);
+      }
+    }
+    if (onClick != null) row.setOnClickListener(onClick);
+    parent.addView(row);
+    return row;
+  }
+
+  private void injectStorageSection(LayoutInflater infl, LinearLayout parent, Context ctx) {
+    injectSectionHeader(infl, parent, ModuleStrings.CAT_STORAGE);
+    injectPathSelectorRow(infl, parent, ctx, ModuleStrings.DESC_PATH_ROW);
+    tagLastChild(parent, ModuleStrings.CAT_STORAGE + " " + ModuleStrings.DESC_PATH_ROW);
+  }
+
+  private void injectBackupSection(LayoutInflater infl, LinearLayout parent, Context ctx) {
+    injectSectionHeader(infl, parent, ModuleStrings.CAT_BACKUP);
+    injectBackupRow(infl, parent, ctx);
+    tagLastChild(parent, ModuleStrings.OPT_BACKUP_LABEL + " " + ModuleStrings.OPT_BACKUP_DESC);
+    injectRestoreRow(infl, parent, ctx);
+    tagLastChild(parent, ModuleStrings.OPT_RESTORE_LABEL + " " + ModuleStrings.OPT_RESTORE_DESC);
+  }
+
+  private void injectOtherSection(
+      LayoutInflater infl, LinearLayout parent, Context ctx, VectorConfig config) {
+    injectSectionHeader(infl, parent, ModuleStrings.CAT_OTHER);
+    injectAboutRow(infl, parent, ctx);
+    tagLastChild(parent, ModuleStrings.OPT_ABOUT_LABEL + " " + ModuleStrings.OPT_ABOUT_DESC);
+
+    injectResetRow(infl, parent, ctx, config, ModuleStrings.DESC_RESET_ROW);
+    tagLastChild(parent, ModuleStrings.SETTINGS_RESET + " " + ModuleStrings.DESC_RESET_ROW);
+  }
+
+  private void tagLastChild(LinearLayout parent, String text) {
+    parent.getChildAt(parent.getChildCount() - 1).setTag(text.toLowerCase());
+  }
+
+  private void injectItemRow(
+      LayoutInflater infl,
+      LinearLayout parent,
+      Context ctx,
+      VectorConfig.Item i,
+      LineVersion.Config currentCfg,
+      Object toggleType,
+      Object statusEnum) {
+    try {
+      if (i.key.equals("custom_font_path")) {
+        injectFontPickerRow(infl, parent, ctx, i);
+        return;
+      }
+      if (i.key.equals("home_tab_type")) {
+        injectHomeTypeRow(infl, parent, ctx, i);
+        return;
+      }
+      if (i.key.equals("fcm_fix_mode")) {
+        injectFcmFixModeRow(infl, parent, ctx, i);
+        return;
+      }
+      if (i.key.equals("fcm_force_registration")) {
+        injectFcmForceRegistrationRow(infl, parent, ctx, i);
+        return;
+      }
+
+      View row = infl.inflate(currentCfg.res.layoutCheckbox, parent, false);
+      boolean isEnabled = SettingsStore.get(i.key, i.enabled);
+
+      Reflect.callMethod(row, currentCfg.settings.methodSetTitleText, i.label);
+      Reflect.callMethod(row, currentCfg.settings.methodSetDescription, i.description, null, null);
+
+      if (toggleType != null)
+        Reflect.callMethod(row, currentCfg.settings.methodSetItemType, toggleType);
+      if (statusEnum != null)
+        Reflect.callMethod(row, currentCfg.settings.methodSetSyncStatus, statusEnum);
+
+      Reflect.callMethod(row, currentCfg.settings.methodSetChecked, isEnabled);
+      Reflect.callMethod(row, currentCfg.settings.methodSetDividerVisible, true);
+
+      Runnable updateUI = () -> applyItemDisabledState(row, i, currentCfg);
+      uiUpdateCallbacks.add(updateUI);
+      updateUI.run();
+
+      row.setOnClickListener(v -> toggleItem(v, i, currentCfg));
+      row.setTag((i.label + " " + i.description).toLowerCase());
+      parent.addView(row);
+    } catch (Throwable ignored) {
+    }
+  }
+
+  private void injectFontPickerRow(
+      LayoutInflater infl, LinearLayout parent, Context ctx, VectorConfig.Item i) {
+    View row =
+        injectInfoRow(
+            infl, parent, ctx, i.label, i.description, true, null, v -> openFontPicker(ctx));
+    if (row != null) row.setTag((i.label + " " + i.description).toLowerCase());
+  }
+
+  private void injectHomeTypeRow(
+      LayoutInflater infl, LinearLayout parent, Context ctx, VectorConfig.Item i) {
+    View row =
+        injectInfoRow(
+            infl, parent, ctx, i.label, i.description, true, null, v -> openHomeTypePicker(ctx, i));
+    if (row != null) {
+      row.setTag((i.label + " " + i.description).toLowerCase());
+      String current = SettingsStore.getString(i.key, "");
+      LineTheme.setRowValue(row, current.isEmpty() ? ModuleStrings.HOME_TYPE_DEFAULT : current);
+    }
+  }
+
+  private void injectFcmFixModeRow(
+      LayoutInflater infl, LinearLayout parent, Context ctx, VectorConfig.Item i) {
+    View row =
+        injectInfoRow(
+            infl,
+            parent,
+            ctx,
+            i.label,
+            i.description,
+            true,
+            null,
+            v -> openFcmFixModePicker(ctx, i));
+    if (row != null) {
+      row.setTag((i.label + " " + i.description).toLowerCase());
+      LineTheme.setRowValue(row, SettingsStore.getString(i.key, ModuleStrings.FCM_FIX_MODE_LEGY));
+    }
+  }
+
+  private void injectFcmForceRegistrationRow(
+      LayoutInflater infl, LinearLayout parent, Context ctx, VectorConfig.Item i) {
+    View row =
+        injectInfoRow(
+            infl,
+            parent,
+            ctx,
+            i.label,
+            i.description,
+            true,
+            null,
+            v -> {
+              if (!SettingsStore.get("experimental_fcm_fix", false)) {
+                Toast.makeText(
+                        ctx, ModuleStrings.FCM_FORCE_REGISTRATION_NEEDS_FIX, Toast.LENGTH_SHORT)
+                    .show();
+                return;
+              }
+              boolean started = FcmFixHook.requestFcmTokenRefresh(ctx.getClassLoader());
+              Toast.makeText(
+                      ctx,
+                      started
+                          ? ModuleStrings.FCM_FORCE_REGISTRATION_STARTED
+                          : ModuleStrings.FCM_FORCE_REGISTRATION_FAILED,
+                      Toast.LENGTH_SHORT)
+                  .show();
+            });
+    if (row != null) {
+      row.setTag((i.label + " " + i.description).toLowerCase());
+    }
+  }
+
+  private void openFcmFixModePicker(Context ctx, VectorConfig.Item i) {
+    String[] labels = {ModuleStrings.FCM_FIX_MODE_LEGY, ModuleStrings.FCM_FIX_MODE_FIS};
+    String[] values = {ModuleStrings.FCM_FIX_MODE_LEGY, ModuleStrings.FCM_FIX_MODE_FIS};
+
+    int checked = 0;
+    String current = SettingsStore.getString(i.key, ModuleStrings.FCM_FIX_MODE_LEGY);
+    for (int k = 0; k < values.length; k++) {
+      if (values[k].equals(current)) {
+        checked = k;
+        break;
+      }
+    }
+
+    int themeId = LineTheme.dialogTheme(ctx);
+    LineTheme.applyDialogColors(
+        new AlertDialog.Builder(ctx, themeId)
+            .setTitle(i.label)
+            .setSingleChoiceItems(
+                labels,
+                checked,
+                (d, which) -> {
+                  String chosen = values[which];
+                  SettingsStore.save(i.key, chosen);
+                  for (VectorConfig.Item itm : Main.options.items) {
+                    if (itm.key.equals(i.key)) {
+                      itm.value = chosen;
+                      break;
+                    }
+                  }
+                  d.dismiss();
+                  pendingRestart = true;
+                  if (onSettingsReloadRequest != null) onSettingsReloadRequest.run();
+                })
+            .setNegativeButton(ModuleStrings.SETTINGS_CANCEL, null)
+            .show(),
+        ctx);
+  }
+
+  private void openHomeTypePicker(Context ctx, VectorConfig.Item i) {
+    List<String> values = new ArrayList<>();
+    values.add("");
+    values.addAll(HomeTabTypeHook.availableHomeTypes(ctx.getClassLoader()));
+
+    String[] labels = new String[values.size()];
+    labels[0] = ModuleStrings.HOME_TYPE_DEFAULT;
+    for (int k = 1; k < values.size(); k++) labels[k] = values.get(k);
+
+    int checked = values.indexOf(SettingsStore.getString(i.key, ""));
+    if (checked < 0) checked = 0;
+
+    int themeId = LineTheme.dialogTheme(ctx);
+    LineTheme.applyDialogColors(
+        new AlertDialog.Builder(ctx, themeId)
+            .setTitle(i.label)
+            .setSingleChoiceItems(
+                labels,
+                checked,
+                (d, which) -> {
+                  String chosen = values.get(which);
+                  SettingsStore.save(i.key, chosen);
+                  for (VectorConfig.Item itm : Main.options.items) {
+                    if (itm.key.equals(i.key)) {
+                      itm.value = chosen;
+                      break;
+                    }
+                  }
+                  d.dismiss();
+                  pendingRestart = true;
+                  if (onSettingsReloadRequest != null) onSettingsReloadRequest.run();
+                })
+            .setNegativeButton(ModuleStrings.SETTINGS_CANCEL, null)
+            .show(),
+        ctx);
+  }
+
+  private void openFontPicker(Context ctx) {
+    Activity host = resolveActivity(ctx);
+    if (host == null) return;
+    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+    intent.addCategory(Intent.CATEGORY_OPENABLE);
+    intent.setType("*/*");
+    String[] mimeTypes = {
+      "font/ttf", "font/otf", "application/x-font-ttf", "application/x-font-otf"
+    };
+    intent.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes);
+    host.startActivityForResult(intent, PICK_FONT_CODE);
+  }
+
+  private void applyItemDisabledState(
+      View row, VectorConfig.Item i, LineVersion.Config currentCfg) {
+    if (i.disabledWhenEnabledKey == null) return;
+    boolean isDisabled = SettingsStore.get(i.disabledWhenEnabledKey, false);
+    row.setAlpha(isDisabled ? 0.5f : 1.0f);
+    if (!isDisabled) return;
+
+    Reflect.callMethod(row, currentCfg.settings.methodSetChecked, false);
+    if (!SettingsStore.get(i.key, false)) return;
+    SettingsStore.save(i.key, false);
+    for (VectorConfig.Item itm : Main.options.items) {
+      if (itm.key.equals(i.key)) {
+        itm.enabled = false;
+        break;
+      }
+    }
+  }
+
+  private void toggleItem(View v, VectorConfig.Item i, LineVersion.Config currentCfg) {
+    if (i.disabledWhenEnabledKey != null && SettingsStore.get(i.disabledWhenEnabledKey, false)) {
+      Reflect.callMethod(v, currentCfg.settings.methodSetChecked, false);
+      return;
+    }
+    boolean newState = !SettingsStore.get(i.key, i.enabled);
+    Reflect.callMethod(v, currentCfg.settings.methodSetChecked, newState);
+    for (VectorConfig.Item itm : Main.options.items) {
+      if (itm.key.equals(i.key)) {
+        itm.enabled = newState;
+        break;
+      }
+    }
+    SettingsStore.save(i.key, newState);
+    for (Runnable r : uiUpdateCallbacks) r.run();
+    pendingRestart = true;
+    cachedSearchView = null;
+  }
+
+  private void injectCategoryRow(
+      LayoutInflater infl,
+      LinearLayout parent,
+      Context ctx,
+      VectorConfig.Category category,
+      Object toggleType,
+      Object statusEnum) {
+    try {
+      View cRow =
+          injectInfoRow(
+              infl,
+              parent,
+              ctx,
+              category.label,
+              null,
+              true,
+              null,
+              v -> switchPage(ctx, toggleType, statusEnum, category));
+      if (cRow != null) cRow.setTag(category.label.toLowerCase());
+    } catch (Throwable ignored) {
+    }
+  }
+
+  private void injectCategoryItems(
+      LayoutInflater infl,
+      LinearLayout parent,
+      Context ctx,
+      VectorConfig.Category category,
+      LineVersion.Config currentCfg,
+      Object toggleType,
+      Object statusEnum) {
+    LinearLayout developerItems = null;
+    if (category == VectorConfig.Category.DEVELOPER) {
+      developerItems = new LinearLayout(ctx);
+      developerItems.setOrientation(LinearLayout.VERTICAL);
+      developerItems.setVisibility(
+          SettingsStore.get("developer_mode", false) ? View.VISIBLE : View.GONE);
+    }
+    String lastSection = null;
+    for (VectorConfig.Item i : Main.options.items) {
+      if (i.category != category) continue;
+      LinearLayout itemParent =
+          developerItems != null && !"developer_mode".equals(i.key) ? developerItems : parent;
+      if (i.section != null && !i.section.isEmpty() && !i.section.equals(lastSection)) {
+        injectSectionHeader(infl, itemParent, i.section);
+        lastSection = i.section;
+      }
+      injectItemRow(infl, itemParent, ctx, i, currentCfg, toggleType, statusEnum);
+    }
+    if (developerItems != null) {
+      parent.addView(developerItems);
+      LinearLayout finalDeveloperItems = developerItems;
+      uiUpdateCallbacks.add(
+          () ->
+              finalDeveloperItems.setVisibility(
+                  SettingsStore.get("developer_mode", false) ? View.VISIBLE : View.GONE));
+    }
+  }
+
+  private void injectSectionHeader(LayoutInflater infl, LinearLayout parent, String text) {
+    try {
+      LineVersion.Config currentCfg = LineVersion.get();
+      View hView = infl.inflate(currentCfg.res.layoutSectionHeader, parent, false);
+      if (hView instanceof TextView) ((TextView) hView).setText(text);
+      hView.setTag("section_header");
+      parent.addView(hView);
+    } catch (Throwable ignored) {
+    }
+  }
+
+  private void filterSettings(View settingsList, String query) {
+    ViewGroup list;
+    if (settingsList instanceof ScrollView) {
+      list = (ViewGroup) ((ScrollView) settingsList).getChildAt(0);
+    } else if (settingsList instanceof ViewGroup) {
+      list = (ViewGroup) settingsList;
+    } else {
+      return;
+    }
+
+    if (list == null) return;
+
+    boolean isSearching = query.length() > 0;
+    int childCount = list.getChildCount();
+    View lastHeader = null;
+    int itemsInCurrentSection = 0;
+
+    for (int i = 0; i < childCount; i++) {
+      View child = list.getChildAt(i);
+      Object tag = child.getTag();
+
+      if (tag instanceof String && ((String) tag).equals("section_header")) {
+        if (lastHeader != null) {
+          lastHeader.setVisibility(
+              itemsInCurrentSection > 0 || !isSearching ? View.VISIBLE : View.GONE);
+        }
+        lastHeader = child;
+        itemsInCurrentSection = 0;
+        continue;
+      }
+
+      if (!isSearching) {
+        child.setVisibility(View.VISIBLE);
+        continue;
+      }
+
+      if (tag instanceof String) {
+        String searchable = (String) tag;
+        if (searchable.contains(query)) {
+          child.setVisibility(View.VISIBLE);
+          itemsInCurrentSection++;
+        } else {
+          child.setVisibility(View.GONE);
+        }
+      }
+    }
+
+    if (lastHeader != null) {
+      lastHeader.setVisibility(
+          itemsInCurrentSection > 0 || !isSearching ? View.VISIBLE : View.GONE);
+    }
+  }
+
+  private void injectPathSelectorRow(
+      LayoutInflater infl, LinearLayout parent, Context ctx, String description) {
+    try {
+      String activePath = SettingsStore.getSettingsDir();
+      CharSequence pathTitle =
+          activePath == null ? ModuleStrings.SETTINGS_PATH_PICKER_HINT : activePath;
+      int pathColor = activePath == null ? Color.RED : LineTheme.accentGreen(ctx);
+      injectInfoRow(
+          infl,
+          parent,
+          ctx,
+          pathTitle,
+          description,
+          true,
+          pathColor,
+          v -> openSystemFolderPicker(ctx));
+    } catch (Throwable ignored) {
+    }
+  }
+
+  private void injectResetRow(
+      LayoutInflater infl,
+      LinearLayout parent,
+      Context ctx,
+      VectorConfig config,
+      String description) {
+    try {
+      injectInfoRow(
+          infl,
+          parent,
+          ctx,
+          ModuleStrings.SETTINGS_RESET,
+          description,
+          false,
+          Color.RED,
+          v -> {
+            Context activeCtx = settingsDialog != null ? settingsDialog.getContext() : ctx;
+            int themeId = LineTheme.dialogTheme(activeCtx);
+            LineTheme.applyDialogColors(
+                new AlertDialog.Builder(activeCtx, themeId)
+                    .setTitle(ModuleStrings.SETTINGS_RESET)
+                    .setMessage(ModuleStrings.SETTINGS_RESET_CONFIRM)
+                    .setPositiveButton(
+                        ModuleStrings.SETTINGS_RESET_OK,
+                        (d, w) -> {
+                          SettingsStore.reset();
+                          SettingsStore.load(Main.options);
+                          pendingRestart = true;
+                          if (onSettingsReloadRequest != null) onSettingsReloadRequest.run();
+                        })
+                    .setNegativeButton(ModuleStrings.SETTINGS_CANCEL, null)
+                    .show(),
+                activeCtx);
+          });
+    } catch (Throwable ignored) {
+    }
+  }
+
+  private void injectBackupRow(LayoutInflater infl, LinearLayout parent, Context ctx) {
+    try {
+      injectInfoRow(
+          infl,
+          parent,
+          ctx,
+          ModuleStrings.OPT_BACKUP_LABEL,
+          ModuleStrings.OPT_BACKUP_DESC,
+          true,
+          null,
+          v -> BackupRestoreHook.runBackup(ctx));
+    } catch (Throwable ignored) {
+    }
+  }
+
+  private void injectRestoreRow(LayoutInflater infl, LinearLayout parent, Context ctx) {
+    try {
+      injectInfoRow(
+          infl,
+          parent,
+          ctx,
+          ModuleStrings.OPT_RESTORE_LABEL,
+          ModuleStrings.OPT_RESTORE_DESC,
+          true,
+          null,
+          v -> {
+            Activity host = resolveActivity(ctx);
+            if (host == null) return;
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("*/*");
+            intent.putExtra(Intent.EXTRA_TITLE, "Tencha_*.tenchabak");
+
+            try {
+              String dirUriStr = SettingsStore.getSettingsDirUri();
+              if (dirUriStr != null) {
+                Uri treeUri = Uri.parse(dirUriStr);
+                String treeId = android.provider.DocumentsContract.getTreeDocumentId(treeUri);
+
+                androidx.documentfile.provider.DocumentFile root =
+                    androidx.documentfile.provider.DocumentFile.fromTreeUri(ctx, treeUri);
+                androidx.documentfile.provider.DocumentFile backupDir =
+                    root.findFile("TenchaBackup");
+
+                String targetId = treeId;
+                if (backupDir != null && backupDir.isDirectory()) {
+                  targetId = treeId + (treeId.endsWith(":") ? "" : "/") + "TenchaBackup";
+                }
+
+                Uri initialUri =
+                    android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, targetId);
+                intent.putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, initialUri);
+              }
+            } catch (Throwable ignored) {
+            }
+
+            host.startActivityForResult(intent, PICK_RESTORE_DB_CODE);
+          });
+    } catch (Throwable ignored) {
+    }
+  }
+
+  private void injectAboutRow(LayoutInflater infl, LinearLayout parent, Context ctx) {
+    try {
+      injectInfoRow(
+          infl,
+          parent,
+          ctx,
+          ModuleStrings.OPT_ABOUT_LABEL,
+          ModuleStrings.OPT_ABOUT_DESC,
+          true,
+          null,
+          v -> openAboutPage(settingsDialog != null ? settingsDialog.getContext() : ctx));
+    } catch (Throwable ignored) {
+    }
+  }
+
+  private void openAboutPage(Context ctx) {
+    if (cachedPageContainer == null || cachedItemHost == null || cachedNavHeader == null) return;
+    final View settingsPage = (View) cachedItemHost.getParent();
+    if (settingsPage == null) return;
+    aboutPageActive = true;
+
+    final View about = buildAboutPageView(ctx);
+    float width = cachedPageContainer.getWidth();
+    about.setTranslationX(width);
+    cachedPageContainer.addView(about, new FrameLayout.LayoutParams(-1, -1));
+    aboutPageView = about;
+
+    settingsPage
+        .animate()
+        .translationX(-width)
+        .setDuration(250)
+        .setInterpolator(new DecelerateInterpolator())
+        .start();
+    about
+        .animate()
+        .translationX(0)
+        .setDuration(250)
+        .setInterpolator(new DecelerateInterpolator())
+        .withEndAction(() -> settingsPage.setVisibility(View.GONE))
+        .start();
+
+    configureNavHeader(ctx, ModuleStrings.OPT_ABOUT_LABEL, v -> closeAboutPage(ctx));
+  }
+
+  private void closeAboutPage(Context ctx) {
+    if (!aboutPageActive || cachedPageContainer == null || cachedItemHost == null) return;
+    aboutPageActive = false;
+
+    final View settingsPage = (View) cachedItemHost.getParent();
+    final View about = aboutPageView;
+    aboutPageView = null;
+
+    float width = cachedPageContainer.getWidth();
+    if (settingsPage != null) {
+      settingsPage.setVisibility(View.VISIBLE);
+      settingsPage.setTranslationX(-width);
+      settingsPage
+          .animate()
+          .translationX(0)
+          .setDuration(250)
+          .setInterpolator(new DecelerateInterpolator())
+          .start();
+    }
+    if (about != null) {
+      about
+          .animate()
+          .translationX(width)
+          .setDuration(250)
+          .setInterpolator(new DecelerateInterpolator())
+          .withEndAction(() -> cachedPageContainer.removeView(about))
+          .start();
+    }
+
+    restoreMainHeader(ctx);
+  }
+
+  private void restoreMainHeader(Context ctx) {
+    String title =
+        (currentActiveCategory == null)
+            ? ModuleStrings.SETTINGS_TITLE
+            : currentActiveCategory.label;
+    configureNavHeader(
+        ctx,
+        title,
+        v -> {
+          if (currentActiveCategory != null) {
+            switchPage(ctx, cachedToggle, cachedSuccess, null);
+          } else {
+            initiateDialogClosure();
+          }
+        });
+  }
+
+  private void configureNavHeader(Context ctx, String title, View.OnClickListener back) {
+    LineVersion.Config currentCfg = LineVersion.get();
+    Reflect.callMethod(
+        cachedNavHeader, currentCfg.main.methodRefreshNavHeader, settingsDialog.getWindow());
+    Reflect.callMethod(cachedNavHeader, currentCfg.main.methodHeaderSetTitle, title);
+    Reflect.callMethod(cachedNavHeader, currentCfg.main.methodHeaderSetButtonListener, back);
+    cachedNavHeader.setBackgroundColor(LineTheme.backgroundColor(ctx));
+    LineTheme.tintTextAndIcons(cachedNavHeader, LineTheme.primaryTextColor(ctx));
+  }
+
+  private View buildAboutPageView(Context ctx) {
+    LayoutInflater infl = LayoutInflater.from(ctx);
+    float density = ctx.getResources().getDisplayMetrics().density;
+    int bg = LineTheme.backgroundColor(ctx);
+
+    ScrollView scroller = new ScrollView(ctx);
+    scroller.setBackgroundColor(bg);
+
+    LinearLayout root = new LinearLayout(ctx);
+    root.setOrientation(LinearLayout.VERTICAL);
+    root.setBackgroundColor(bg);
+    root.setPadding(0, 0, 0, (int) (64 * density));
+
+    root.addView(buildAboutHero(ctx));
+
+    injectAboutLinks(infl, root, ctx);
+
+    TextView disclaimer = new TextView(ctx);
+    disclaimer.setText(ModuleStrings.ABOUT_DISCLAIMER);
+    disclaimer.setTextSize(12);
+    disclaimer.setTextColor(LineTheme.secondaryTextColor(ctx));
+    disclaimer.setGravity(Gravity.CENTER_HORIZONTAL);
+    LinearLayout.LayoutParams discLp = new LinearLayout.LayoutParams(-1, -2);
+    discLp.topMargin = (int) (28 * density);
+    discLp.leftMargin = (int) (24 * density);
+    discLp.rightMargin = (int) (24 * density);
+    disclaimer.setLayoutParams(discLp);
+    root.addView(disclaimer);
+
+    scroller.addView(root);
+    return scroller;
+  }
+
+  private LinearLayout buildAboutHero(Context ctx) {
+    float density = ctx.getResources().getDisplayMetrics().density;
+    LinearLayout hero = new LinearLayout(ctx);
+    hero.setOrientation(LinearLayout.VERTICAL);
+    hero.setGravity(Gravity.CENTER_HORIZONTAL);
+    hero.setPadding(
+        (int) (32 * density), (int) (32 * density), (int) (32 * density), (int) (28 * density));
+
+    try {
+      Context modCtx =
+          ctx.createPackageContext("dev.vector.lineextension", Context.CONTEXT_IGNORE_SECURITY);
+      int resId =
+          modCtx
+              .getResources()
+              .getIdentifier("ic_tencha_logo", "drawable", "dev.vector.lineextension");
+      if (resId != 0) {
+        ImageView logo = new ImageView(ctx);
+        logo.setImageDrawable(modCtx.getDrawable(resId));
+        LinearLayout.LayoutParams lp =
+            new LinearLayout.LayoutParams((int) (84 * density), (int) (84 * density));
+        lp.bottomMargin = (int) (16 * density);
+        logo.setLayoutParams(lp);
+        hero.addView(logo);
+      }
+    } catch (Throwable ignored) {
+    }
+
+    TextView name = new TextView(ctx);
+    name.setText(BRAND_TAG);
+    name.setTextSize(26);
+    name.setTypeface(null, Typeface.BOLD);
+    name.setTextColor(LineTheme.primaryTextColor(ctx));
+    name.setGravity(Gravity.CENTER_HORIZONTAL);
+    hero.addView(name);
+
+    TextView ver = new TextView(ctx);
+    ver.setText("v" + BuildConfig.VERSION_NAME);
+    ver.setTextSize(13);
+    ver.setTextColor(LineTheme.secondaryTextColor(ctx));
+    ver.setGravity(Gravity.CENTER_HORIZONTAL);
+    LinearLayout.LayoutParams verLp = new LinearLayout.LayoutParams(-2, -2);
+    verLp.topMargin = (int) (4 * density);
+    ver.setLayoutParams(verLp);
+    hero.addView(ver);
+
+    TextView tagline = new TextView(ctx);
+    tagline.setText(ModuleStrings.ABOUT_TAGLINE);
+    tagline.setTextSize(13);
+    tagline.setTextColor(LineTheme.secondaryTextColor(ctx));
+    tagline.setGravity(Gravity.CENTER_HORIZONTAL);
+    LinearLayout.LayoutParams tagLp = new LinearLayout.LayoutParams(-2, -2);
+    tagLp.topMargin = (int) (10 * density);
+    tagline.setLayoutParams(tagLp);
+    hero.addView(tagline);
+
+    return hero;
+  }
+
+  private void injectAboutLinks(LayoutInflater infl, LinearLayout root, Context ctx) {
+    injectSectionHeader(infl, root, ModuleStrings.ABOUT_SEC_LINKS);
+    injectInfoRow(
+        infl,
+        root,
+        ctx,
+        ModuleStrings.ABOUT_LINK_GITHUB,
+        "@yukkuri-matcha-tea",
+        true,
+        null,
+        v -> openUrl(ctx, "https://github.com/yukkuri-matcha-tea"));
+    injectInfoRow(
+        infl,
+        root,
+        ctx,
+        ModuleStrings.ABOUT_LINK_X,
+        "@yukkuri_matcha_",
+        true,
+        null,
+        v -> openUrl(ctx, "https://x.com/yukkuri_matcha_"));
+    injectInfoRow(
+        infl,
+        root,
+        ctx,
+        ModuleStrings.ABOUT_LINK_YOUTUBE,
+        "ゆっくり抹茶ティー",
+        true,
+        null,
+        v -> openUrl(ctx, "https://www.youtube.com/channel/UCuhltKmciQLwQTBEIIiCH2g"));
+    injectInfoRow(
+        infl,
+        root,
+        ctx,
+        ModuleStrings.ABOUT_LINK_LICENSE,
+        ModuleStrings.ABOUT_LICENSE_VALUE,
+        false,
+        null,
+        null);
+  }
+
+  private void openUrl(Context ctx, String url) {
+    try {
+      Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+      intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+      ctx.startActivity(intent);
+    } catch (Throwable t) {
+      Toast.makeText(ctx, "リンクを開けませんでした", Toast.LENGTH_SHORT).show();
+    }
+  }
+
+  private static boolean containsVectorItem(Collection<?> items, LineVersion.Config c) {
+    if (items == null) return false;
+    for (Object item : items) {
+      try {
+        Object model = Reflect.getObjectField(item, c.settings.fieldItemModel);
+        if (model == null) continue;
+        Object tag = Reflect.getObjectField(model, c.settings.fieldModelTag);
+        if (BRAND_TAG.equals(tag)) return true;
+      } catch (Throwable ignored) {
+      }
+    }
+    return false;
+  }
+
+  private static void applyVisibility(View root, int viewId, int state) {
+    View v = root.findViewById(viewId);
+    if (v != null) v.setVisibility(state);
+  }
+
+  private void openSystemFolderPicker(Context ctx) {
+    Activity host = resolveActivity(ctx);
+    if (host == null) return;
+    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+    host.startActivityForResult(intent, PICK_DIRECTORY_CODE);
+  }
+
+  private Activity resolveActivity(Context ctx) {
+    if (ctx instanceof Activity) return (Activity) ctx;
+    if (ctx instanceof ContextWrapper)
+      return resolveActivity(((ContextWrapper) ctx).getBaseContext());
+    return null;
+  }
+
+  private static void cacheUiConstants(Context ctx) {
+    if (cachedToggle != null && cachedSuccess != null) return;
+    try {
+      LineVersion.Config currentCfg = LineVersion.get();
+      LayoutInflater infl = LayoutInflater.from(ctx);
+      View view = infl.inflate(currentCfg.res.layoutCheckbox, null, false);
+      for (java.lang.reflect.Method m : view.getClass().getMethods()) {
+        if (m.getParameterCount() != 1) continue;
+        Class<?> p = m.getParameterTypes()[0];
+        if (!p.isEnum()) continue;
+        if ("setItemType".equals(m.getName())) {
+          for (Object c : p.getEnumConstants()) if ("TOGGLE".equals(c.toString())) cachedToggle = c;
+        } else if ("setSyncStatus".equals(m.getName())) {
+          for (Object c : p.getEnumConstants())
+            if ("SUCCESS".equals(c.toString())) cachedSuccess = c;
+        }
+      }
+    } catch (Throwable ignored) {
+    }
+  }
+
+  private static Object createAdapterItemProxy(Class<?> itf, ClassLoader cl, int type) {
+    LineVersion.Config currentCfg = LineVersion.get();
+    return Proxy.newProxyInstance(
+        cl,
+        new Class[] {itf},
+        (proxy, method, args) ->
+            currentCfg.settings.methodProxyGetItemType.equals(method.getName()) ? type : null);
+  }
+
+  private void setupSearchBox(
+      Context ctx, LinearLayout root, FrameLayout itemHost, Object toggleType, Object statusEnum) {
+    float density = ctx.getResources().getDisplayMetrics().density;
+    RelativeLayout searchContainer = new RelativeLayout(ctx);
+    LinearLayout.LayoutParams containerLp = new LinearLayout.LayoutParams(-1, -2);
+    int margin = (int) (12 * density);
+    containerLp.setMargins(margin, margin / 2, margin, margin / 2);
+    searchContainer.setLayoutParams(containerLp);
+
+    EditText searchBox = new EditText(ctx);
+    searchBox.setHint(ModuleStrings.SETTINGS_SEARCH_HINT);
+    searchBox.setSingleLine(true);
+    searchBox.setTextSize(14);
+    searchBox.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
+
+    int pHorizontal = (int) (16 * density);
+    int pVertical = (int) (8 * density);
+    int pRight = (int) (40 * density);
+    searchBox.setPadding(pHorizontal, pVertical, pRight, pVertical);
+
+    GradientDrawable searchBg = new GradientDrawable();
+    searchBg.setColor(LineTheme.fieldColor(ctx));
+    searchBg.setCornerRadius(20 * density);
+    searchBox.setBackground(searchBg);
+
+    searchBox.setTextColor(LineTheme.primaryTextColor(ctx));
+    searchBox.setHintTextColor(LineTheme.secondaryTextColor(ctx));
+
+    RelativeLayout.LayoutParams boxLp = new RelativeLayout.LayoutParams(-1, -2);
+    searchBox.setLayoutParams(boxLp);
+    searchContainer.addView(searchBox);
+
+    TextView clearButton = new TextView(ctx);
+    clearButton.setText("✕");
+    clearButton.setGravity(Gravity.CENTER);
+    clearButton.setTextSize(18);
+    clearButton.setTextColor(LineTheme.secondaryTextColor(ctx));
+    clearButton.setVisibility(View.GONE);
+
+    int btnSize = (int) (32 * density);
+    RelativeLayout.LayoutParams btnLp = new RelativeLayout.LayoutParams(btnSize, btnSize);
+    btnLp.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
+    btnLp.addRule(RelativeLayout.CENTER_VERTICAL);
+    btnLp.rightMargin = (int) (8 * density);
+    clearButton.setLayoutParams(btnLp);
+    searchContainer.addView(clearButton);
+
+    root.addView(searchContainer, 0);
+
+    clearButton.setOnClickListener(v -> searchBox.setText(""));
+
+    searchBox.addTextChangedListener(
+        new TextWatcher() {
+          @Override
+          public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+          @Override
+          public void onTextChanged(CharSequence s, int start, int before, int count) {
+            String query = s.toString().toLowerCase();
+            clearButton.setVisibility(query.length() > 0 ? View.VISIBLE : View.GONE);
+            applySearchQuery(ctx, query, toggleType, statusEnum);
+          }
+
+          @Override
+          public void afterTextChanged(Editable s) {}
+        });
+
+    onSettingsReloadRequest =
+        () -> reloadSettingsList(ctx, itemHost, searchBox, toggleType, statusEnum);
+  }
+
+  private void applySearchQuery(Context ctx, String query, Object toggleType, Object statusEnum) {
+    if (query.length() > 0) {
+      if (currentActiveCategory == null) {
+        if (cachedSearchView == null) {
+          cachedSearchView = renderSettingsItems(ctx, toggleType, statusEnum, null, true);
+        }
+        if (cachedItemHost.getChildAt(0) != cachedSearchView) {
+          cachedItemHost.removeAllViews();
+          cachedItemHost.addView(cachedSearchView);
+        }
+        filterSettings(cachedSearchView, query);
+      } else {
+        filterSettings(cachedItemHost.getChildAt(0), query);
+      }
+    } else {
+      if (cachedItemHost.getChildAt(0) == cachedSearchView) {
+        View normalView =
+            renderSettingsItems(ctx, toggleType, statusEnum, currentActiveCategory, false);
+        cachedItemHost.removeAllViews();
+        cachedItemHost.addView(normalView);
+      } else {
+        filterSettings(cachedItemHost.getChildAt(0), "");
+      }
+    }
+  }
+
+  private void reloadSettingsList(
+      Context ctx, FrameLayout itemHost, EditText searchBox, Object toggleType, Object statusEnum) {
+    Activity a = resolveActivity(ctx);
+    if (a == null) return;
+    a.runOnUiThread(
+        () -> {
+          cachedSearchView = null;
+          itemHost.removeAllViews();
+          String query = searchBox.getText().toString().toLowerCase();
+          boolean isSearching = query.length() > 0;
+          View newList =
+              renderSettingsItems(ctx, toggleType, statusEnum, currentActiveCategory, isSearching);
+          itemHost.addView(newList);
+          filterSettings(newList, query);
+        });
+  }
+
+  private void applyNativeHighlight(View v, Context ctx) {
+    if (v == null) return;
+    android.graphics.drawable.StateListDrawable states =
+        new android.graphics.drawable.StateListDrawable();
+    int normalColor = LineTheme.backgroundColor(ctx);
+    int pressedColor = LineTheme.fieldColor(ctx);
+
+    states.addState(new int[] {android.R.attr.state_pressed}, new ColorDrawable(pressedColor));
+    states.addState(new int[] {android.R.attr.state_focused}, new ColorDrawable(pressedColor));
+    states.addState(new int[] {}, new ColorDrawable(normalColor));
+    v.setBackground(states);
+  }
+}

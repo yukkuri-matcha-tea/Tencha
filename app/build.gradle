@@ -1,0 +1,88 @@
+plugins {
+    id 'com.android.application'
+    id 'com.diffplug.spotless'
+    id 'org.jetbrains.kotlin.plugin.compose'
+}
+
+android {
+    namespace 'dev.vector.lineextension'
+    compileSdk 37
+
+    defaultConfig {
+        applicationId 'dev.vector.lineextension'
+        minSdk 26
+        targetSdk 35
+        versionCode 10507
+        versionName "1.5.7"
+        multiDexEnabled true
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled false
+        }
+    }
+
+    lint {
+        checkReleaseBuilds false
+    }
+
+    buildFeatures {
+        buildConfig true
+        compose true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    androidResources {
+        additionalParameters '--allow-reserved-package-id', '--package-id', '0x64'
+        noCompress 'themefile'
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs = ['src/main/java']
+        }
+    }
+
+    packaging {
+        resources {
+            merges += 'META-INF/xposed/*'
+        }
+    }
+}
+
+spotless {
+    java {
+        target 'src/*/java/**/*.java'
+        toggleOffOn('@formatter:off', '@formatter:on')
+        googleJavaFormat('1.25.0').reflowLongStrings(false)
+        importOrder()
+        removeUnusedImports()
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
+}
+
+dependencies {
+    compileOnly 'io.github.libxposed:api:102.0.0'
+    compileOnly 'androidx.appcompat:appcompat:1.7.0'
+    compileOnly 'androidx.fragment:fragment:1.8.6'
+    compileOnly 'androidx.constraintlayout:constraintlayout:2.2.1'
+    compileOnly 'androidx.recyclerview:recyclerview:1.3.2'
+    implementation 'androidx.documentfile:documentfile:1.0.1'
+    implementation 'androidx.core:core-splashscreen:1.0.1'
+    def composeBom = platform('androidx.compose:compose-bom:2026.08.00')
+    implementation composeBom
+    implementation 'androidx.activity:activity-compose:1.13.0'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    debugImplementation 'androidx.compose.ui:ui-tooling'
+    testImplementation 'junit:junit:4.13.2'
+}

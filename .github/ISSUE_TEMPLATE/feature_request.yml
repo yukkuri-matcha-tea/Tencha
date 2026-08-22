@@ -1,0 +1,63 @@
+name: 機能要望
+description: 新機能や改善のアイデアを提案してください
+title: "[Feature]: "
+labels: ["enhancement"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        機能リクエストありがとうございます。以下の項目をご記入ください。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 解決したい課題
+      description: 現在どのような問題や不便を感じているか記載してください
+      placeholder: "例：特定のトークでのみ既読回避を無効化したい"
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: 提案する機能
+      description: 具体的にどのような機能があればよいか記載してください
+      placeholder: "例：トークごとに既読回避のON/OFFを切り替えられる設定を追加"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: カテゴリ
+      description: この機能リクエストのカテゴリを選択してください
+      options:
+        - メッセージ
+        - 画面表示 & UI
+        - 通知
+        - その他
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 代替案
+      description: 検討した他の解決策があれば記載してください
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 優先度
+      description: この機能の優先度を選択してください
+      options:
+        - 低（あると便利）
+        - 中（普段使いで不便）
+        - 高（ぜひ使いたい）
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: 補足事項
+      description: 参考情報や画面イメージなどがあれば記載してください

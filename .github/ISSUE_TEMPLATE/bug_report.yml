@@ -1,0 +1,125 @@
+name: バグ報告
+description: バグを報告して改善にご協力ください
+title: "[Bug]: "
+labels: ["bug"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        バグ報告ありがとうございます。以下の項目をご記入ください。
+
+  - type: textarea
+    id: description
+    attributes:
+      label: バグの概要
+      description: 発生している問題を簡潔に説明してください
+      placeholder: 例：既読回避が機能しない
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 再現手順
+      description: バグを再現する手順を記載してください
+      placeholder: |
+        1. 「...」画面を開く
+        2. 「...」ボタンをクリック
+        3. 「...」の操作を行う
+        4. エラーが発生する
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待する動作
+      description: 本来どのように動作すべきか記載してください
+      placeholder: 例：メッセージを開いても相手に既読がつかない
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 実際の動作
+      description: 実際に発生した現象を記載してください
+      placeholder: 例：既読回避をONにしているのに既読がついてしまう
+
+  - type: input
+    id: version
+    attributes:
+      label: Tenchaバージョン
+      description: 使用しているTenchaのバージョン
+      placeholder: "例: 1.2.0"
+    validations:
+      required: true
+
+  - type: input
+    id: line_version
+    attributes:
+      label: LINEバージョン
+      description: 使用しているLINEのバージョン
+      placeholder: "例: 26.9.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: 環境
+      description: 使用している環境を選択してください
+      options:
+        - Root (LSPosed/Vector)
+        - 非Root (LSPatch/NPatch)
+        - その他
+    validations:
+      required: true
+
+  - type: input
+    id: android_version
+    attributes:
+      label: Androidバージョン
+      description: 使用しているAndroidのバージョン
+      placeholder: "例: Android 14"
+    validations:
+      required: true
+
+  - type: input
+    id: xposed_env
+    attributes:
+      label: Xposed環境
+      description: 使用しているXposedフレームワークとそのバージョン
+      placeholder: "例: LSPosed v1.9.3 / Vector / NPatch v1.0.5"
+
+  - type: input
+    id: device
+    attributes:
+      label: 端末
+      description: 使用している端末の機種名
+      placeholder: "例: Google Pixel 7"
+
+  - type: input
+    id: feature
+    attributes:
+      label: 影響を受ける機能
+      description: どの機能に問題があるか記載してください
+      placeholder: "例: 既読回避"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: ログ・エラーメッセージ
+      description: LSPosed/Vector/NPatchのログや、logcat、エラーメッセージがあれば貼り付けてください
+      render: shell
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 画面キャプチャ
+      description: 問題の状況がわかるスクリーンショットがあれば添付してください
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: 補足事項
+      description: その他、補足情報があれば記載してください
