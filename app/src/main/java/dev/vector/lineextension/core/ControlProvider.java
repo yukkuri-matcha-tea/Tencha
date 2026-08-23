@@ -250,6 +250,7 @@ public final class ControlProvider extends ContentProvider {
     out.putString("lineVersion", prefs.getString(LAST_LINE_VERSION, ""));
     out.putString("lineProcess", prefs.getString(LAST_LINE_PROCESS, ""));
     out.putString("loaderMode", prefs.getString(LAST_LOADER_MODE, RuntimeEnvironment.MODE_UNKNOWN));
+    out.putBoolean("loaderModeReported", prefs.contains(LAST_LOADER_MODE));
     Set<String> ids = new HashSet<>();
     for (Map.Entry<String, ?> entry : prefs.getAll().entrySet()) {
       if (entry.getKey().startsWith(PREFIX_STATUS)) {

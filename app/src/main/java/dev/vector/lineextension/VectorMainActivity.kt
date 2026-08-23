@@ -69,6 +69,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -98,10 +99,17 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 class VectorMainActivity : ComponentActivity() {
+  private val resumeGeneration = mutableIntStateOf(0)
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
-    setContent { VectorTheme { VectorApp() } }
+    setContent { VectorTheme { VectorApp(resumeGeneration.intValue) } }
+  }
+
+  override fun onResume() {
+    super.onResume()
+    resumeGeneration.intValue++
   }
 }
 
@@ -162,11 +170,16 @@ internal fun matchesFeatureFilter(
 internal fun shouldShowRootlessSetup(hasConnected: Boolean, hasRootEvidence: Boolean): Boolean =
   !hasConnected && !hasRootEvidence
 
-private fun runtimeModeLabel(mode: String): String =
+internal fun runtimeModeLabel(mode: String, reported: Boolean): String =
   when (mode) {
     RuntimeEnvironment.MODE_ROOT -> "Vector経由で動作中（root）"
     RuntimeEnvironment.MODE_LSPATCH -> "LSPatch経由で動作中（非root）"
-    else -> "接続済み（実行方式を判定できません）"
+    else ->
+      if (reported) {
+        "接続済み（実行方式を判定できません）"
+      } else {
+        "LINE再起動後に実行方式を表示"
+      }
   }
 
 private val visibleFeatures =
@@ -200,7 +213,7 @@ private val experimentalKeys =
   )
 
 @Composable
-private fun VectorApp() {
+private fun VectorApp(resumeGeneration: Int) {
   val context = LocalContext.current
   val snackbar = remember { SnackbarHostState() }
   var screen by remember { mutableStateOf(Screen.HOME) }
@@ -252,6 +265,8 @@ private fun VectorApp() {
     settings = ControlClient.settingsSnapshot(context)
   }
 
+  LaunchedEffect(resumeGeneration) { refresh() }
+
   key(screen) {
     when (screen) {
       Screen.HOME -> DashboardScreen(snapshot, ::refresh, { screen = it; refresh() }, snackbar, updateAvailable)
@@ -285,6 +300,7 @@ private fun DashboardScreen(
   val lastSeen = snapshot.getLong("lastLineSeen", 0L)
   val connected = lastSeen > 0L
   val loaderMode = snapshot.getString("loaderMode", RuntimeEnvironment.MODE_UNKNOWN)
+  val loaderModeReported = snapshot.getBoolean("loaderModeReported", false)
   var nextLaunchOff by remember(snapshot) { mutableStateOf(snapshot.getBoolean("nextLaunchOff", false)) }
   val featureStates = visibleFeatures.map { it to snapshot.getBundle("feature.${it.id}") }
   val workingCount = featureStates.count { (_, state) -> state?.getString("status") == FeatureStatus.WORKING.name }
@@ -334,7 +350,7 @@ private fun DashboardScreen(
               )
               if (connected) {
                 Text(
-                  runtimeModeLabel(loaderMode),
+                  runtimeModeLabel(loaderMode, loaderModeReported),
                   style = MaterialTheme.typography.bodyLarge,
                   fontWeight = FontWeight.Medium,
                 )
