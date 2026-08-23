@@ -266,9 +266,9 @@ public class ModuleStrings {
   public static final String DESC_PATH_ROW = "モジュールの設定ファイルなどが保存されるディレクトリを選択します。";
   public static final String DESC_RESET_ROW = "すべてのモジュール設定をデフォルト状態に戻します。";
   public static final String OPT_BACKUP_LABEL = "トーク履歴のバックアップ";
-  public static final String OPT_BACKUP_DESC = "現在のトーク履歴を保存先にバックアップします。";
+  public static final String OPT_BACKUP_DESC = "現在のトーク履歴をTencha内部に安全に保存します。";
   public static final String OPT_RESTORE_LABEL = "トーク履歴の復元";
-  public static final String OPT_RESTORE_DESC = "バックアップファイルからトーク履歴を復元します。現在の履歴が上書きされます。";
+  public static final String OPT_RESTORE_DESC = "Tencha内部の最新バックアップから復元します。現在の履歴が上書きされます。";
 
   public static final String REACTION_NOTIF_TITLE = "%sが以下のメッセージにリアクションしました";
 

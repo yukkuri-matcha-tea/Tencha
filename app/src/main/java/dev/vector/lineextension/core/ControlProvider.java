@@ -14,6 +14,9 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -36,6 +39,8 @@ public final class ControlProvider extends ContentProvider {
   private static final String LAST_LINE_SEEN = "runtime.last_line_seen";
   private static final String LAST_LINE_VERSION = "runtime.line_version";
   private static final String LAST_LINE_PROCESS = "runtime.line_process";
+  public static final String LINE_BACKUP_FILE = "line_chat_backup.tenchabak";
+  public static final String LINE_BACKUP_TEMP_FILE = "line_chat_backup.tmp";
 
   private SharedPreferences prefs;
 
@@ -124,6 +129,10 @@ public final class ControlProvider extends ContentProvider {
       case "storeExists":
         out.putBoolean("exists", storeFile(arg).isFile());
         return out;
+      case "commitLineBackup":
+        if (!isLineCaller()) throw new SecurityException("Only LINE may commit a chat backup");
+        out.putBoolean("ok", commitLineBackup());
+        return out;
       default:
         throw new IllegalArgumentException("Unknown control method");
     }
@@ -153,7 +162,9 @@ public final class ControlProvider extends ContentProvider {
         || !(name.equals("vector_settings.bin")
             || name.equals("vector_unsend_history.bin")
             || name.equals("vector_read_history.bin")
-            || name.equals("vector_edit_history.bin"))) {
+            || name.equals("vector_edit_history.bin")
+            || name.equals(LINE_BACKUP_FILE)
+            || name.equals(LINE_BACKUP_TEMP_FILE))) {
       throw new IllegalArgumentException("Invalid Tencha store file");
     }
     File dir = new File(getContext().getFilesDir(), "tencha_store");
@@ -161,6 +172,26 @@ public final class ControlProvider extends ContentProvider {
       throw new IllegalStateException("Could not create Tencha store");
     }
     return new File(dir, name);
+  }
+
+  private boolean commitLineBackup() {
+    File source = storeFile(LINE_BACKUP_TEMP_FILE);
+    File destination = storeFile(LINE_BACKUP_FILE);
+    if (!source.isFile() || source.length() == 0L) return false;
+    try {
+      try {
+        Files.move(
+            source.toPath(),
+            destination.toPath(),
+            StandardCopyOption.ATOMIC_MOVE,
+            StandardCopyOption.REPLACE_EXISTING);
+      } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+        Files.move(source.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING);
+      }
+      return destination.isFile() && destination.length() > 0L;
+    } catch (IOException ignored) {
+      return false;
+    }
   }
 
   private void reportFeature(String id, Bundle extras) {

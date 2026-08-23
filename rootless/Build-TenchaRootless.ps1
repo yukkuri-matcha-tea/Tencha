@@ -5,7 +5,7 @@ param(
 
     [string[]]$SplitApk = @(),
 
-    [string]$TenchaApk = (Join-Path $PSScriptRoot 'Tencha-rootless-module-1.5.7.apk'),
+    [string]$TenchaApk = (Join-Path $PSScriptRoot 'Tencha-rootless-module-1.5.8.apk'),
 
     [string]$LspatchJar = (Join-Path $PSScriptRoot 'lspatch-v1.1-474-release.jar'),
 

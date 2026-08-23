@@ -1383,37 +1383,20 @@ public class SettingsUIInjector implements BaseHook {
           true,
           null,
           v -> {
-            Activity host = resolveActivity(ctx);
-            if (host == null) return;
-            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-            intent.addCategory(Intent.CATEGORY_OPENABLE);
-            intent.setType("*/*");
-            intent.putExtra(Intent.EXTRA_TITLE, "Tencha_*.tenchabak");
-
-            try {
-              String dirUriStr = SettingsStore.getSettingsDirUri();
-              if (dirUriStr != null) {
-                Uri treeUri = Uri.parse(dirUriStr);
-                String treeId = android.provider.DocumentsContract.getTreeDocumentId(treeUri);
-
-                androidx.documentfile.provider.DocumentFile root =
-                    androidx.documentfile.provider.DocumentFile.fromTreeUri(ctx, treeUri);
-                androidx.documentfile.provider.DocumentFile backupDir =
-                    root.findFile("TenchaBackup");
-
-                String targetId = treeId;
-                if (backupDir != null && backupDir.isDirectory()) {
-                  targetId = treeId + (treeId.endsWith(":") ? "" : "/") + "TenchaBackup";
-                }
-
-                Uri initialUri =
-                    android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, targetId);
-                intent.putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, initialUri);
-              }
-            } catch (Throwable ignored) {
+            if (!BackupRestoreHook.hasInternalBackup(ctx)) {
+              Toast.makeText(ctx, "Tencha内部にトーク履歴バックアップがありません。", Toast.LENGTH_LONG).show();
+              return;
             }
-
-            host.startActivityForResult(intent, PICK_RESTORE_DB_CODE);
+            LineTheme.applyDialogColors(
+                new AlertDialog.Builder(ctx, LineTheme.dialogTheme(ctx))
+                    .setTitle(ModuleStrings.RESTORE_CONFIRM_TITLE)
+                    .setMessage(ModuleStrings.RESTORE_CONFIRM_MSG)
+                    .setPositiveButton(
+                        ModuleStrings.SETTINGS_YES,
+                        (dialog, which) -> BackupRestoreHook.runRestoreInternal(ctx))
+                    .setNegativeButton(ModuleStrings.SETTINGS_CANCEL, null)
+                    .show(),
+                ctx);
           });
     } catch (Throwable ignored) {
     }

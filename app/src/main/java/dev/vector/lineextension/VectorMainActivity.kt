@@ -479,7 +479,7 @@ private fun SettingsScreen(
         Card {
           Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("バックアップ", style = MaterialTheme.typography.titleMedium)
-            Text("端末のフォルダまたはGoogle Driveへ、Tenchaの設定と履歴を保存します。", style = MaterialTheme.typography.bodyMedium)
+            Text("端末のフォルダまたはGoogle Driveへ、Tenchaの設定・履歴とLINE内で作成したトーク履歴バックアップを保存します。", style = MaterialTheme.typography.bodyMedium)
             Text("履歴を含むため、作成したファイルの共有には注意してください。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
               FilledTonalButton(

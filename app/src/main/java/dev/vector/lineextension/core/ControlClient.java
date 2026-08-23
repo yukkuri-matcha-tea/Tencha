@@ -88,6 +88,11 @@ public final class ControlClient {
     return out != null && out.getBoolean("exists", false);
   }
 
+  public static boolean commitLineBackup(Context context) {
+    Bundle out = call(context, "commitLineBackup", null, null);
+    return out != null && out.getBoolean("ok", false);
+  }
+
   public static void syncSettings(Context context, VectorConfig config) {
     Bundle settings = settingsSnapshot(context);
     java.util.ArrayList<String> boolKeys = settings.getStringArrayList("booleanKeys");

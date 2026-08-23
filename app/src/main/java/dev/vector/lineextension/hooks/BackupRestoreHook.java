@@ -9,8 +9,8 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.widget.Toast;
-import androidx.documentfile.provider.DocumentFile;
-import dev.vector.lineextension.SettingsStore;
+import dev.vector.lineextension.core.ControlClient;
+import dev.vector.lineextension.core.ControlProvider;
 import dev.vector.lineextension.utils.LineTheme;
 import dev.vector.lineextension.utils.ModuleStrings;
 import java.io.File;
@@ -19,13 +19,10 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.text.SimpleDateFormat;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -95,55 +92,96 @@ public final class BackupRestoreHook {
         });
   }
 
+  public static boolean hasInternalBackup(Context context) {
+    return ControlClient.storeExists(context, ControlProvider.LINE_BACKUP_FILE);
+  }
+
+  public static void runRestoreInternal(Context context) {
+    final ProgressDialog pd = createSyncProgress(context, ModuleStrings.RESTORE_PROCESSING);
+    pd.show();
+    LineTheme.applyDialogColors(pd, context);
+
+    syncExecutor.execute(
+        () -> {
+          File tempFile = null;
+          boolean result = false;
+          try {
+            if (!hasInternalBackup(context)) throw new IOException("Internal backup not found");
+            tempFile =
+                File.createTempFile(
+                    "vector_restore_internal_", ".tenchabak", context.getCacheDir());
+            try (InputStream in =
+                    context
+                        .getContentResolver()
+                        .openInputStream(ControlClient.storeUri(ControlProvider.LINE_BACKUP_FILE));
+                OutputStream out = new FileOutputStream(tempFile, false)) {
+              if (in == null) throw new IOException("Cannot open internal backup");
+              copyStream(in, out);
+            }
+            result = executeFullRestore(context, tempFile);
+          } catch (Exception e) {
+            Log.e(LOG_TAG, "Internal restore failed: " + e.getMessage());
+          }
+          final boolean finalResult = result;
+          final File finalTempFile = tempFile;
+          uiHandler.post(
+              () -> {
+                pd.dismiss();
+                if (finalResult) {
+                  LineTheme.applyDialogColors(
+                      new AlertDialog.Builder(context, LineTheme.dialogTheme(context))
+                          .setTitle(ModuleStrings.RESTORE_SUCCESS)
+                          .setMessage(ModuleStrings.MANAGER_RESTART_REQUIRED)
+                          .setPositiveButton(
+                              ModuleStrings.RESTART_OK,
+                              (d, w) -> android.os.Process.killProcess(android.os.Process.myPid()))
+                          .setCancelable(false)
+                          .show(),
+                      context);
+                } else {
+                  notifySyncResult(
+                      context, false, ModuleStrings.RESTORE_SUCCESS, ModuleStrings.RESTORE_ERROR);
+                }
+                if (finalTempFile != null) finalTempFile.delete();
+              });
+        });
+  }
+
   private static boolean executeVectorBackup(Context context) {
-    DocumentFile outFile = null;
     try {
-      String dirUriStr = SettingsStore.getSettingsDirUri();
-      if (dirUriStr == null) return false;
-
-      DocumentFile root = DocumentFile.fromTreeUri(context, Uri.parse(dirUriStr));
-      if (root == null || !root.canWrite()) {
-        Log.e(LOG_TAG, "Cannot access backup directory: " + dirUriStr);
-        return false;
-      }
-
       File mainDb = context.getDatabasePath("naver_line");
       if (!mainDb.exists()) {
         Log.e(LOG_TAG, "Source database not found");
         return false;
       }
 
-      String stamp =
-          new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
-      DocumentFile vectorFolder = ensureSubDir(root, "TenchaBackup");
-      if (vectorFolder == null) return false;
-
-      outFile =
-          vectorFolder.createFile("application/octet-stream", "Tencha_" + stamp + ".tenchabak");
-      if (outFile == null) return false;
-
-      writeBackupZip(context, outFile.getUri());
+      writeBackupZip(context, ControlClient.storeUri(ControlProvider.LINE_BACKUP_TEMP_FILE));
+      if (!ControlClient.commitLineBackup(context)) {
+        Log.e(LOG_TAG, "Could not commit internal backup");
+        return false;
+      }
       return true;
     } catch (Exception e) {
       Log.e(LOG_TAG, "Backup failed: " + e.getMessage());
-      if (outFile != null) safeDelete(outFile);
       return false;
     }
   }
 
   private static void writeBackupZip(Context context, Uri dst) throws IOException {
-    try (OutputStream raw = context.getContentResolver().openOutputStream(dst);
-        ZipOutputStream zip = new ZipOutputStream(raw)) {
+    try (OutputStream raw = context.getContentResolver().openOutputStream(dst)) {
+      if (raw == null) throw new IOException("Cannot open Tencha internal storage");
+      try (ZipOutputStream zip = new ZipOutputStream(raw)) {
 
-      zip.putNextEntry(new ZipEntry(MARKER_ENTRY));
-      zip.closeEntry();
+        zip.putNextEntry(new ZipEntry(MARKER_ENTRY));
+        zip.closeEntry();
 
-      for (String dbName : DB_NAMES) {
-        File baseDb = context.getDatabasePath(dbName);
-        for (String suffix : DB_SUFFIXES) {
-          File f = new File(baseDb.getPath() + suffix);
-          if (f.isFile()) {
-            writeFileEntry(zip, dbName + ".db" + suffix, f);
+        for (String dbName : DB_NAMES) {
+          File baseDb = context.getDatabasePath(dbName);
+          for (String suffix : DB_SUFFIXES) {
+            File f = new File(baseDb.getPath() + suffix);
+            if (f.isFile()) {
+              writeFileEntry(zip, dbName + ".db" + suffix, f);
+            }
           }
         }
       }
@@ -261,18 +299,6 @@ public final class BackupRestoreHook {
     byte[] buf = new byte[COPY_BUFFER_SIZE];
     int n;
     while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
-  }
-
-  private static DocumentFile ensureSubDir(DocumentFile parent, String name) {
-    DocumentFile dir = parent.findFile(name);
-    return (dir != null && dir.isDirectory()) ? dir : parent.createDirectory(name);
-  }
-
-  private static void safeDelete(DocumentFile file) {
-    try {
-      file.delete();
-    } catch (Throwable ignored) {
-    }
   }
 
   private static ProgressDialog createSyncProgress(Context context, String text) {

@@ -25,8 +25,9 @@ public final class TenchaBackup {
   private static final String PREFS = "vector_control_v1";
   private static final String MANIFEST = "manifest.json";
   private static final String SETTINGS = "settings.json";
-  private static final long MAX_ENTRY_BYTES = 16L * 1024 * 1024;
-  private static final long MAX_TOTAL_BYTES = 32L * 1024 * 1024;
+  private static final long MAX_SMALL_ENTRY_BYTES = 16L * 1024 * 1024;
+  private static final long MAX_LINE_BACKUP_BYTES = 2L * 1024 * 1024 * 1024;
+  private static final long MAX_TOTAL_BYTES = MAX_LINE_BACKUP_BYTES + 64L * 1024 * 1024;
   private static final Set<String> STORE_FILES =
       Collections.unmodifiableSet(
           new HashSet<>(
@@ -34,7 +35,8 @@ public final class TenchaBackup {
                   "vector_settings.bin",
                   "vector_unsend_history.bin",
                   "vector_read_history.bin",
-                  "vector_edit_history.bin")));
+                  "vector_edit_history.bin",
+                  ControlProvider.LINE_BACKUP_FILE)));
 
   private TenchaBackup() {}
 
@@ -56,7 +58,7 @@ public final class TenchaBackup {
           if (!file.isFile()) continue;
           zip.putNextEntry(new ZipEntry("store/" + name));
           try (InputStream in = new FileInputStream(file)) {
-            copy(in, zip, MAX_ENTRY_BYTES);
+            copy(in, zip, maxBytesFor(name));
           }
           zip.closeEntry();
         }
@@ -67,7 +69,7 @@ public final class TenchaBackup {
   public static void restoreFrom(Context context, Uri source) throws Exception {
     JSONObject manifest = null;
     JSONObject settings = null;
-    java.util.Map<String, byte[]> storeData = new java.util.HashMap<>();
+    java.util.Map<String, File> stagedStore = new java.util.LinkedHashMap<>();
     Set<String> seen = new HashSet<>();
     long total = 0L;
 
@@ -83,43 +85,97 @@ public final class TenchaBackup {
           if (!seen.add(entry.getName())) {
             throw new IllegalArgumentException("バックアップに重複項目があります");
           }
-          ByteArrayOutputStream data = new ByteArrayOutputStream();
-          long size = copy(zip, data, MAX_ENTRY_BYTES);
-          total += size;
-          if (total > MAX_TOTAL_BYTES) throw new IllegalArgumentException("バックアップが大きすぎます");
-          byte[] bytes = data.toByteArray();
           if (MANIFEST.equals(entry.getName())) {
+            byte[] bytes = readSmallEntry(zip);
+            total += bytes.length;
             manifest = new JSONObject(new String(bytes, StandardCharsets.UTF_8));
           } else if (SETTINGS.equals(entry.getName())) {
+            byte[] bytes = readSmallEntry(zip);
+            total += bytes.length;
             settings = new JSONObject(new String(bytes, StandardCharsets.UTF_8));
           } else if (entry.getName().startsWith("store/")) {
             String name = entry.getName().substring("store/".length());
-            if (STORE_FILES.contains(name)) storeData.put(name, bytes);
+            if (STORE_FILES.contains(name)) {
+              File store = ensureStoreDirectory(context);
+              File temp = new File(store, name + ".restore");
+              stagedStore.put(name, temp);
+              try (OutputStream out = new FileOutputStream(temp, false)) {
+                total += copy(zip, out, maxBytesFor(name));
+              }
+            } else {
+              total += drain(zip, MAX_SMALL_ENTRY_BYTES);
+            }
+          } else {
+            total += drain(zip, MAX_SMALL_ENTRY_BYTES);
           }
+          if (total > MAX_TOTAL_BYTES) throw new IllegalArgumentException("バックアップが大きすぎます");
           zip.closeEntry();
         }
       }
-    }
 
-    if (manifest == null
-        || !"tencha-backup".equals(manifest.optString("format"))
-        || manifest.optInt("version", -1) != 1
-        || settings == null) {
-      throw new IllegalArgumentException("Tenchaバックアップではありません");
-    }
+      if (manifest == null
+          || !"tencha-backup".equals(manifest.optString("format"))
+          || manifest.optInt("version", -1) != 1
+          || settings == null) {
+        throw new IllegalArgumentException("Tenchaバックアップではありません");
+      }
 
-    restoreSettings(context, settings);
+      restoreSettings(context, settings);
+      File store = ensureStoreDirectory(context);
+      for (Map.Entry<String, File> entry : stagedStore.entrySet()) {
+        File target = new File(store, entry.getKey());
+        moveReplacing(entry.getValue(), target);
+      }
+      stagedStore.clear();
+    } finally {
+      for (File temp : stagedStore.values()) {
+        if (temp.isFile()) temp.delete();
+      }
+    }
+  }
+
+  private static File ensureStoreDirectory(Context context) {
     File store = new File(context.getFilesDir(), "tencha_store");
     if (!store.isDirectory() && !store.mkdirs()) throw new IllegalStateException("保存領域を作れません");
-    for (Map.Entry<String, byte[]> entry : storeData.entrySet()) {
-      File target = new File(store, entry.getKey());
-      File temp = new File(store, entry.getKey() + ".restore");
-      try (OutputStream out = new FileOutputStream(temp, false)) {
-        out.write(entry.getValue());
-      }
-      if (target.exists() && !target.delete()) throw new IllegalStateException("既存データを更新できません");
-      if (!temp.renameTo(target)) throw new IllegalStateException("復元データを確定できません");
+    return store;
+  }
+
+  private static void moveReplacing(File source, File target) throws Exception {
+    try {
+      java.nio.file.Files.move(
+          source.toPath(),
+          target.toPath(),
+          java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+          java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+    } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+      java.nio.file.Files.move(
+          source.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
     }
+  }
+
+  private static byte[] readSmallEntry(InputStream in) throws Exception {
+    ByteArrayOutputStream data = new ByteArrayOutputStream();
+    copy(in, data, MAX_SMALL_ENTRY_BYTES);
+    return data.toByteArray();
+  }
+
+  private static long drain(InputStream in, long maxBytes) throws Exception {
+    return copy(
+        in,
+        new OutputStream() {
+          @Override
+          public void write(int value) {}
+
+          @Override
+          public void write(byte[] data, int offset, int length) {}
+        },
+        maxBytes);
+  }
+
+  private static long maxBytesFor(String name) {
+    return ControlProvider.LINE_BACKUP_FILE.equals(name)
+        ? MAX_LINE_BACKUP_BYTES
+        : MAX_SMALL_ENTRY_BYTES;
   }
 
   private static JSONObject exportSettings(Context context) throws Exception {
