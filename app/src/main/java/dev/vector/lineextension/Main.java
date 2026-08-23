@@ -75,6 +75,9 @@ public class Main extends XposedModule {
         Vector.log("Tencha: non-primary LINE process skipped: " + lpparam.processName);
         return;
       }
+      // A restore is staged from the settings screen, then applied on the next cold start before
+      // LINE opens its databases. Never replace a live SQLite database from the settings Activity.
+      BackupRestoreHook.applyPendingRestore(context);
       ControlClient.reportSession(
           context, LineVersion.getDetectedVersionName(), lpparam.processName);
       if (ControlClient.consumeNextLaunchOff(context)) {

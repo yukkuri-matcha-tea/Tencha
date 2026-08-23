@@ -34,6 +34,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 public class SettingsStore {
+  private static final int MAX_INFLATED_STORE_BYTES = 64 * 1024 * 1024;
 
   private static final String SETTINGS_FILE = "vector_settings.bin";
   private static final String UNSEND_HISTORY_FILE = "vector_unsend_history.bin";
@@ -517,7 +518,14 @@ public class SettingsStore {
       ByteArrayOutputStream bos = new ByteArrayOutputStream();
       byte[] buf = new byte[8192];
       int n;
-      while ((n = iis.read(buf)) != -1) bos.write(buf, 0, n);
+      int total = 0;
+      while ((n = iis.read(buf)) != -1) {
+        total += n;
+        if (total > MAX_INFLATED_STORE_BYTES) {
+          throw new IOException("Tencha store entry is too large");
+        }
+        bos.write(buf, 0, n);
+      }
       return bos.toByteArray();
     } catch (Throwable t) {
       return null;

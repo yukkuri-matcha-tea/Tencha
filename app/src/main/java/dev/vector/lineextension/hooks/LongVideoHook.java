@@ -38,7 +38,7 @@ public class LongVideoHook implements BaseHook {
 
       XposedInterface.Hooker bypassHook =
           chain -> {
-            RuntimeReporter.working("media_quality", "動画時間チェックの緩和をRuntime確認");
+            RuntimeReporter.working("long_video", "動画時間チェックの緩和をRuntime確認");
             return success;
           };
 
@@ -125,7 +125,7 @@ public class LongVideoHook implements BaseHook {
     }
 
     if (duration > 300000 && shouldSpoof(v)) {
-      RuntimeReporter.working("media_quality", "5分超動画のクライアント判定緩和をRuntime確認");
+      RuntimeReporter.working("long_video", "5分超動画のクライアント判定緩和をRuntime確認");
       if (result instanceof Integer) {
         return 1000;
       } else {

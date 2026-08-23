@@ -36,6 +36,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -69,6 +70,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.vector.lineextension.core.ControlClient
 import dev.vector.lineextension.core.FeatureStatus
+import dev.vector.lineextension.core.GitHubUpdater
 import dev.vector.lineextension.core.TenchaBackup
 import java.text.DateFormat
 import java.text.SimpleDateFormat
@@ -601,6 +603,11 @@ private fun DiagnosticsScreen(
 @Composable
 private fun AboutScreen(onNavigate: (Screen) -> Unit, snackbar: SnackbarHostState) {
   val context = LocalContext.current
+  val scope = rememberCoroutineScope()
+  var updateInfo by remember { mutableStateOf<GitHubUpdater.UpdateInfo?>(null) }
+  var downloadedApk by remember { mutableStateOf<java.io.File?>(null) }
+  var updateStatus by remember { mutableStateOf("GitHub Releasesから最新版を確認します") }
+  var updateBusy by remember { mutableStateOf(false) }
   Scaffold(
     topBar = { TopAppBar(title = { Text("Tenchaについて") }) },
     bottomBar = { TenchaNavigationBar(Screen.ABOUT, onNavigate) },
@@ -622,6 +629,84 @@ private fun AboutScreen(onNavigate: (Screen) -> Unit, snackbar: SnackbarHostStat
             Text("Tencha", style = MaterialTheme.typography.headlineSmall)
             Text("Enhance your LINE.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("Version ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelLarge)
+          }
+        }
+      }
+      item {
+        Card {
+          Column(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+          ) {
+            Text("アプリの更新", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(updateStatus, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (updateBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            Button(
+              modifier = Modifier.fillMaxWidth(),
+              enabled = !updateBusy,
+              onClick = {
+                val readyApk = downloadedApk
+                val available = updateInfo
+                when {
+                  readyApk != null -> {
+                    if (GitHubUpdater.canRequestInstall(context)) {
+                      runCatching { GitHubUpdater.launchInstaller(context, readyApk) }
+                        .onFailure { scope.launch { snackbar.showSnackbar("インストーラーを開けません: ${it.message.orEmpty()}") } }
+                    } else {
+                      GitHubUpdater.openInstallPermission(context)
+                      scope.launch { snackbar.showSnackbar("Tenchaからのアプリインストールを許可して、もう一度押してください") }
+                    }
+                  }
+                  available != null -> {
+                    updateBusy = true
+                    updateStatus = "v${available.version} をダウンロードしています…"
+                    scope.launch {
+                      val result = withContext(Dispatchers.IO) { runCatching { GitHubUpdater.downloadAndVerify(context, available) } }
+                      updateBusy = false
+                      result.onSuccess {
+                        downloadedApk = it
+                        updateStatus = "v${available.version} の署名とSHA-256を確認しました"
+                      }.onFailure {
+                        updateStatus = "ダウンロードまたは検証に失敗しました"
+                        snackbar.showSnackbar(it.message ?: "更新に失敗しました")
+                      }
+                    }
+                  }
+                  else -> {
+                    updateBusy = true
+                    updateStatus = "最新版を確認しています…"
+                    scope.launch {
+                      val result = withContext(Dispatchers.IO) { runCatching { GitHubUpdater.checkLatest() } }
+                      updateBusy = false
+                      result.onSuccess {
+                        if (it.isNewerThanCurrent) {
+                          updateInfo = it
+                          updateStatus = "v${it.version} を利用できます"
+                        } else {
+                          updateStatus = "最新版です（v${BuildConfig.VERSION_NAME}）"
+                        }
+                      }.onFailure {
+                        updateStatus = "更新を確認できませんでした"
+                        snackbar.showSnackbar(it.message ?: "GitHubへ接続できません")
+                      }
+                    }
+                  }
+                }
+              },
+            ) {
+              Text(
+                when {
+                  downloadedApk != null -> "インストール"
+                  updateInfo != null -> "v${updateInfo!!.version} をダウンロード"
+                  else -> "更新を確認"
+                },
+              )
+            }
+            Text(
+              "APKの署名とSHA-256を検証してから更新します。",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
           }
         }
       }

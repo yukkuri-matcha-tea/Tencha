@@ -34,6 +34,8 @@ public class EditHistoryHook implements BaseHook {
   private static final String PLACEHOLDER_ITEM = "INVALID";
   private static final String ICON_DRAWABLE = "clock_edit";
   private static final int ICON_ID = 0x64000010;
+  private static final int MAX_MESSAGES = 5000;
+  private static final int MAX_VERSIONS_PER_MESSAGE = 20;
 
   private static final Map<String, JSONArray> cache = new ConcurrentHashMap<>();
   private static final Object persistLock = new Object();
@@ -92,10 +94,33 @@ public class EditHistoryHook implements BaseHook {
           return;
         }
         versions.put(version(newText, now()));
+        while (versions.length() > MAX_VERSIONS_PER_MESSAGE) versions.remove(0);
         cache.put(msgId, versions);
+        pruneCache();
         persist();
       } catch (Throwable ignored) {
       }
+    }
+  }
+
+  private static void pruneCache() {
+    while (cache.size() > MAX_MESSAGES) {
+      String oldest = null;
+      long oldestId = Long.MAX_VALUE;
+      for (String id : cache.keySet()) {
+        long numeric;
+        try {
+          numeric = Long.parseLong(id);
+        } catch (NumberFormatException ignored) {
+          numeric = Long.MIN_VALUE;
+        }
+        if (numeric < oldestId) {
+          oldestId = numeric;
+          oldest = id;
+        }
+      }
+      if (oldest == null) break;
+      cache.remove(oldest);
     }
   }
 

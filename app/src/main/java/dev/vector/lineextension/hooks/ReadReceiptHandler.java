@@ -11,6 +11,8 @@ import dev.vector.lineextension.core.RuntimeReporter;
 import dev.vector.lineextension.utils.LineDBUtils;
 import java.lang.reflect.Method;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
@@ -24,6 +26,8 @@ public class ReadReceiptHandler implements BaseHook {
   private static final String TIME_FMT = "yyyy-MM-dd HH:mm:ss";
   private static final String NOP_CHAT_ID = "VECTOR_NOP";
   private static final String UNKNOWN_READER_NAME = "Unknown";
+  private static final int MAX_HISTORY_CHATS = 200;
+  private static final int MAX_MESSAGES_PER_CHAT = 2000;
 
   private static volatile boolean isBulkReading = false;
   private static final Set<String> pendingManualReads = ConcurrentHashMap.newKeySet();
@@ -281,10 +285,46 @@ public class ReadReceiptHandler implements BaseHook {
       ensureMessageEntries(chat, records);
       markReaderOnMessagesUpTo(chat, readerMid, readerName, timeStr, lastMsgId);
       setReaderHwm(chat, readerMid, lastMsgId);
+      pruneReadHistory(history);
       SettingsStore.saveReadHistory(history);
-      RuntimeReporter.working("read_history", "既読ユーザーID・時刻の記録をRuntime確認");
+      RuntimeReporter.working("read_block", "既読ユーザーID・時刻の記録をRuntime確認");
     } catch (Throwable ignored) {
     }
+  }
+
+  private void pruneReadHistory(JSONObject history) {
+    JSONObject chats = history.optJSONObject("c");
+    if (chats == null) return;
+    ArrayList<String> chatIds = jsonKeys(chats);
+    for (String chatId : chatIds) {
+      JSONObject chat = chats.optJSONObject(chatId);
+      JSONObject messages = chat == null ? null : chat.optJSONObject("m");
+      if (messages == null || messages.length() <= MAX_MESSAGES_PER_CHAT) continue;
+      ArrayList<String> ids = jsonKeys(messages);
+      ids.sort(Comparator.comparingLong(id -> parseLong(id, Long.MIN_VALUE)));
+      for (int i = 0; i < ids.size() - MAX_MESSAGES_PER_CHAT; i++) messages.remove(ids.get(i));
+    }
+    if (chatIds.size() <= MAX_HISTORY_CHATS) return;
+    chatIds.sort(
+        Comparator.comparingLong(
+            id -> {
+              JSONObject chat = chats.optJSONObject(id);
+              JSONObject messages = chat == null ? null : chat.optJSONObject("m");
+              long newest = Long.MIN_VALUE;
+              if (messages != null) {
+                Iterator<String> keys = messages.keys();
+                while (keys.hasNext()) newest = Math.max(newest, parseLong(keys.next(), newest));
+              }
+              return newest;
+            }));
+    for (int i = 0; i < chatIds.size() - MAX_HISTORY_CHATS; i++) chats.remove(chatIds.get(i));
+  }
+
+  private static ArrayList<String> jsonKeys(JSONObject object) {
+    ArrayList<String> keys = new ArrayList<>();
+    Iterator<String> iterator = object.keys();
+    while (iterator.hasNext()) keys.add(iterator.next());
+    return keys;
   }
 
   private JSONObject ensureChat(JSONObject history, String chatId) throws Exception {

@@ -93,6 +93,16 @@ public final class ControlClient {
     return out != null && out.getBoolean("ok", false);
   }
 
+  public static boolean commitLineRestore(Context context) {
+    Bundle out = call(context, "commitLineRestore", null, null);
+    return out != null && out.getBoolean("ok", false);
+  }
+
+  public static boolean finishLineRestore(Context context) {
+    Bundle out = call(context, "finishLineRestore", null, null);
+    return out != null && out.getBoolean("ok", false);
+  }
+
   public static void syncSettings(Context context, VectorConfig config) {
     Bundle settings = settingsSnapshot(context);
     java.util.ArrayList<String> boolKeys = settings.getStringArrayList("booleanKeys");

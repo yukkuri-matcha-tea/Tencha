@@ -32,6 +32,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.json.JSONObject;
 
 public class UnsendProtector implements BaseHook {
+  private static final int MAX_UNSEND_EVENTS = 10000;
 
   private static final int TIMESTAMP_MSG_ID_TAG = 0x7f7a0001;
   private static final int TIMESTAMP_VIEW_CLEANUP_INTERVAL = 64;
@@ -145,6 +146,24 @@ public class UnsendProtector implements BaseHook {
 
   private static synchronized void persistUnsendEvent(String msgId, String timestamp) {
     unsendEvents.put(msgId, timestamp);
+    while (unsendEvents.size() > MAX_UNSEND_EVENTS) {
+      String oldest = null;
+      long oldestId = Long.MAX_VALUE;
+      for (String id : unsendEvents.keySet()) {
+        long numeric;
+        try {
+          numeric = Long.parseLong(id);
+        } catch (NumberFormatException ignored) {
+          numeric = Long.MIN_VALUE;
+        }
+        if (numeric < oldestId) {
+          oldestId = numeric;
+          oldest = id;
+        }
+      }
+      if (oldest == null) break;
+      unsendEvents.remove(oldest);
+    }
     try {
       JSONObject json = new JSONObject();
       for (Map.Entry<String, String> entry : unsendEvents.entrySet())

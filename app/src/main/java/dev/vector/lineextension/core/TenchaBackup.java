@@ -72,6 +72,8 @@ public final class TenchaBackup {
     java.util.Map<String, File> stagedStore = new java.util.LinkedHashMap<>();
     Set<String> seen = new HashSet<>();
     long total = 0L;
+    JSONObject originalSettings = exportSettings(context);
+    File rollbackDir = new File(context.getCacheDir(), "tencha_restore_rollback");
 
     try (InputStream raw = context.getContentResolver().openInputStream(source)) {
       if (raw == null) throw new IllegalStateException("バックアップを開けません");
@@ -120,17 +122,41 @@ public final class TenchaBackup {
         throw new IllegalArgumentException("Tenchaバックアップではありません");
       }
 
-      restoreSettings(context, settings);
       File store = ensureStoreDirectory(context);
-      for (Map.Entry<String, File> entry : stagedStore.entrySet()) {
-        File target = new File(store, entry.getKey());
-        moveReplacing(entry.getValue(), target);
+      deleteDirectory(rollbackDir);
+      if (!rollbackDir.mkdirs()) throw new IllegalStateException("復元準備領域を作れません");
+      for (String name : STORE_FILES) {
+        File current = new File(store, name);
+        if (current.isFile()) copyFile(current, new File(rollbackDir, name), maxBytesFor(name));
+      }
+
+      try {
+        restoreSettings(context, settings);
+        for (String name : STORE_FILES) {
+          File target = new File(store, name);
+          File staged = stagedStore.remove(name);
+          if (staged != null) {
+            moveReplacing(staged, target);
+          } else if (target.exists() && !target.delete()) {
+            throw new IllegalStateException("古い履歴を削除できません");
+          }
+        }
+      } catch (Exception failure) {
+        restoreSettings(context, originalSettings);
+        for (String name : STORE_FILES) {
+          File target = new File(store, name);
+          File saved = new File(rollbackDir, name);
+          if (target.exists()) target.delete();
+          if (saved.isFile()) moveReplacing(saved, target);
+        }
+        throw failure;
       }
       stagedStore.clear();
     } finally {
       for (File temp : stagedStore.values()) {
         if (temp.isFile()) temp.delete();
       }
+      deleteDirectory(rollbackDir);
     }
   }
 
@@ -151,6 +177,25 @@ public final class TenchaBackup {
       java.nio.file.Files.move(
           source.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
     }
+  }
+
+  private static void copyFile(File source, File target, long maxBytes) throws Exception {
+    try (InputStream in = new FileInputStream(source);
+        OutputStream out = new FileOutputStream(target, false)) {
+      copy(in, out, maxBytes);
+    }
+  }
+
+  private static void deleteDirectory(File dir) {
+    if (dir == null || !dir.exists()) return;
+    File[] children = dir.listFiles();
+    if (children != null) {
+      for (File child : children) {
+        if (child.isDirectory()) deleteDirectory(child);
+        else child.delete();
+      }
+    }
+    dir.delete();
   }
 
   private static byte[] readSmallEntry(InputStream in) throws Exception {

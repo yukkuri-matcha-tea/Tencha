@@ -12,8 +12,6 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.util.TypedValue;
@@ -53,7 +51,6 @@ import java.util.List;
 public class SettingsUIInjector implements BaseHook {
 
   private static final String BRAND_TAG = "Tencha";
-  private static final int PICK_DIRECTORY_CODE = 0x4C58;
   private static final int PICK_FONT_CODE = 0x4C59;
   private static final int PICK_RESTORE_DB_CODE = 0x4C5A;
   private static final int EXPORT_CHAT_BACKUP_CODE = 0x4C5B;
@@ -379,10 +376,7 @@ public class SettingsUIInjector implements BaseHook {
 
   private Object handleActivityResult(XposedInterface.Chain chain) throws Throwable {
     int requestCode = (int) chain.getArg(0);
-    if (requestCode == PICK_DIRECTORY_CODE) {
-      handleDirectoryPicked(chain);
-      return null;
-    } else if (requestCode == PICK_FONT_CODE) {
+    if (requestCode == PICK_FONT_CODE) {
       handleFontPicked(chain);
       return null;
     } else if (requestCode == PICK_RESTORE_DB_CODE) {
@@ -395,38 +389,29 @@ public class SettingsUIInjector implements BaseHook {
     return chain.proceed();
   }
 
-  private void handleDirectoryPicked(XposedInterface.Chain chain) {
-    if ((int) chain.getArg(1) != Activity.RESULT_OK || chain.getArg(2) == null) return;
-    Uri treeUri = ((Intent) chain.getArg(2)).getData();
-    if (treeUri == null) return;
-    try {
-      ((Activity) chain.getThisObject())
-          .getContentResolver()
-          .takePersistableUriPermission(
-              treeUri,
-              Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-    } catch (Throwable ignored) {
-    }
-    SettingsStore.setSettingsDir(treeUri.toString());
-    SettingsStore.load(Main.options);
-    pendingRestart = true;
-    if (onSettingsReloadRequest != null) onSettingsReloadRequest.run();
-  }
-
   private void handleFontPicked(XposedInterface.Chain chain) {
     if ((int) chain.getArg(1) != Activity.RESULT_OK || chain.getArg(2) == null) return;
     Uri fontUri = ((Intent) chain.getArg(2)).getData();
     if (fontUri == null) return;
     try {
       Context ctx = (Context) chain.getThisObject();
-      java.io.InputStream is = ctx.getContentResolver().openInputStream(fontUri);
       File out = new File(ctx.getFilesDir(), "vector_custom_font.ttf");
-      java.io.FileOutputStream os = new java.io.FileOutputStream(out);
-      byte[] buffer = new byte[8192];
-      int len;
-      while ((len = is.read(buffer)) != -1) os.write(buffer, 0, len);
-      os.close();
-      is.close();
+      File temp = new File(ctx.getCacheDir(), "tencha_font_import.tmp");
+      try (java.io.InputStream is = ctx.getContentResolver().openInputStream(fontUri);
+          java.io.FileOutputStream os = new java.io.FileOutputStream(temp, false)) {
+        if (is == null) throw new java.io.IOException("フォントを開けません");
+        byte[] buffer = new byte[8192];
+        long total = 0L;
+        int len;
+        while ((len = is.read(buffer)) != -1) {
+          total += len;
+          if (total > 32L * 1024 * 1024) throw new java.io.IOException("フォントが大きすぎます");
+          os.write(buffer, 0, len);
+        }
+      }
+      android.graphics.Typeface.createFromFile(temp);
+      java.nio.file.Files.move(
+          temp.toPath(), out.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 
       String localPath = out.getAbsolutePath();
       SettingsStore.save("custom_font_path", localPath);
@@ -447,8 +432,7 @@ public class SettingsUIInjector implements BaseHook {
     if ((int) chain.getArg(1) != Activity.RESULT_OK || chain.getArg(2) == null) return;
     Uri dbUri = ((Intent) chain.getArg(2)).getData();
     if (dbUri == null) return;
-    Context ctx = (Context) chain.getThisObject();
-    new Thread(() -> prepareRestoreDb(ctx, dbUri)).start();
+    BackupRestoreHook.stageRestore((Context) chain.getThisObject(), dbUri);
   }
 
   private void handleChatBackupExportPicked(XposedInterface.Chain chain) {
@@ -456,37 +440,6 @@ public class SettingsUIInjector implements BaseHook {
     Uri destination = ((Intent) chain.getArg(2)).getData();
     if (destination == null) return;
     BackupRestoreHook.exportInternalBackup((Context) chain.getThisObject(), destination);
-  }
-
-  private void prepareRestoreDb(Context ctx, Uri dbUri) {
-    File tempFile = null;
-    try {
-      tempFile = File.createTempFile("vector_restore_", ".db", ctx.getCacheDir());
-      try (java.io.InputStream is = ctx.getContentResolver().openInputStream(dbUri);
-          java.io.FileOutputStream os = new java.io.FileOutputStream(tempFile)) {
-        byte[] buffer = new byte[8192];
-        int len;
-        while ((len = is.read(buffer)) != -1) os.write(buffer, 0, len);
-      }
-      final File finalFile = tempFile;
-      new Handler(Looper.getMainLooper()).post(() -> confirmRestore(ctx, finalFile));
-    } catch (Throwable t) {
-      Vector.log("Tencha: Failed to prepare restore DB: " + t.getMessage());
-      if (tempFile != null) tempFile.delete();
-    }
-  }
-
-  private void confirmRestore(Context ctx, File file) {
-    int themeId = LineTheme.dialogTheme(ctx);
-    LineTheme.applyDialogColors(
-        new AlertDialog.Builder(ctx, themeId)
-            .setTitle(ModuleStrings.RESTORE_CONFIRM_TITLE)
-            .setMessage(ModuleStrings.RESTORE_CONFIRM_MSG)
-            .setPositiveButton(
-                ModuleStrings.SETTINGS_YES, (d, w) -> BackupRestoreHook.runRestore(ctx, file))
-            .setNegativeButton(ModuleStrings.SETTINGS_CANCEL, (d, w) -> file.delete())
-            .show(),
-        ctx);
   }
 
   private Object onHostDestroy(XposedInterface.Chain chain) throws Throwable {
@@ -913,12 +866,6 @@ public class SettingsUIInjector implements BaseHook {
     return row;
   }
 
-  private void injectStorageSection(LayoutInflater infl, LinearLayout parent, Context ctx) {
-    injectSectionHeader(infl, parent, ModuleStrings.CAT_STORAGE);
-    injectPathSelectorRow(infl, parent, ctx, ModuleStrings.DESC_PATH_ROW);
-    tagLastChild(parent, ModuleStrings.CAT_STORAGE + " " + ModuleStrings.DESC_PATH_ROW);
-  }
-
   private void injectBackupSection(LayoutInflater infl, LinearLayout parent, Context ctx) {
     injectSectionHeader(infl, parent, ModuleStrings.CAT_BACKUP);
     injectBackupRow(infl, parent, ctx);
@@ -1142,7 +1089,7 @@ public class SettingsUIInjector implements BaseHook {
     if (host == null) return;
     Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
     intent.addCategory(Intent.CATEGORY_OPENABLE);
-    intent.setType("*/*");
+    intent.setType("font/*");
     String[] mimeTypes = {
       "font/ttf", "font/otf", "application/x-font-ttf", "application/x-font-otf"
     };
@@ -1310,26 +1257,6 @@ public class SettingsUIInjector implements BaseHook {
     }
   }
 
-  private void injectPathSelectorRow(
-      LayoutInflater infl, LinearLayout parent, Context ctx, String description) {
-    try {
-      String activePath = SettingsStore.getSettingsDir();
-      CharSequence pathTitle =
-          activePath == null ? ModuleStrings.SETTINGS_PATH_PICKER_HINT : activePath;
-      int pathColor = activePath == null ? Color.RED : LineTheme.accentGreen(ctx);
-      injectInfoRow(
-          infl,
-          parent,
-          ctx,
-          pathTitle,
-          description,
-          true,
-          pathColor,
-          v -> openSystemFolderPicker(ctx));
-    } catch (Throwable ignored) {
-    }
-  }
-
   private void injectResetRow(
       LayoutInflater infl,
       LinearLayout parent,
@@ -1413,23 +1340,49 @@ public class SettingsUIInjector implements BaseHook {
           true,
           null,
           v -> {
-            if (!BackupRestoreHook.hasInternalBackup(ctx)) {
-              Toast.makeText(ctx, "Tencha内部にトーク履歴バックアップがありません。", Toast.LENGTH_LONG).show();
-              return;
-            }
+            final boolean hasInternal = BackupRestoreHook.hasInternalBackup(ctx);
+            String[] choices =
+                hasInternal
+                    ? new String[] {"Tencha内部の最新バックアップ", "ファイル・Google Driveから選択"}
+                    : new String[] {"ファイル・Google Driveから選択"};
             LineTheme.applyDialogColors(
                 new AlertDialog.Builder(ctx, LineTheme.dialogTheme(ctx))
-                    .setTitle(ModuleStrings.RESTORE_CONFIRM_TITLE)
-                    .setMessage(ModuleStrings.RESTORE_CONFIRM_MSG)
-                    .setPositiveButton(
-                        ModuleStrings.SETTINGS_YES,
-                        (dialog, which) -> BackupRestoreHook.runRestoreInternal(ctx))
+                    .setTitle("復元元を選択")
+                    .setItems(
+                        choices,
+                        (dialog, which) -> {
+                          if (hasInternal && which == 0) confirmInternalRestore(ctx);
+                          else openRestoreFilePicker(ctx);
+                        })
                     .setNegativeButton(ModuleStrings.SETTINGS_CANCEL, null)
                     .show(),
                 ctx);
           });
     } catch (Throwable ignored) {
     }
+  }
+
+  private void confirmInternalRestore(Context ctx) {
+    LineTheme.applyDialogColors(
+        new AlertDialog.Builder(ctx, LineTheme.dialogTheme(ctx))
+            .setTitle(ModuleStrings.RESTORE_CONFIRM_TITLE)
+            .setMessage(ModuleStrings.RESTORE_CONFIRM_MSG)
+            .setPositiveButton(
+                ModuleStrings.SETTINGS_YES,
+                (dialog, which) -> BackupRestoreHook.runRestoreInternal(ctx))
+            .setNegativeButton(ModuleStrings.SETTINGS_CANCEL, null)
+            .show(),
+        ctx);
+  }
+
+  private void openRestoreFilePicker(Context ctx) {
+    Activity host = resolveActivity(ctx);
+    if (host == null) return;
+    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+    intent.addCategory(Intent.CATEGORY_OPENABLE);
+    intent.setType("application/octet-stream");
+    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+    host.startActivityForResult(intent, PICK_RESTORE_DB_CODE);
   }
 
   private void injectAboutRow(LayoutInflater infl, LinearLayout parent, Context ctx) {
@@ -1693,14 +1646,6 @@ public class SettingsUIInjector implements BaseHook {
   private static void applyVisibility(View root, int viewId, int state) {
     View v = root.findViewById(viewId);
     if (v != null) v.setVisibility(state);
-  }
-
-  private void openSystemFolderPicker(Context ctx) {
-    Activity host = resolveActivity(ctx);
-    if (host == null) return;
-    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-    host.startActivityForResult(intent, PICK_DIRECTORY_CODE);
   }
 
   private Activity resolveActivity(Context ctx) {

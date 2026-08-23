@@ -41,6 +41,8 @@ public final class ControlProvider extends ContentProvider {
   private static final String LAST_LINE_PROCESS = "runtime.line_process";
   public static final String LINE_BACKUP_FILE = "line_chat_backup.tenchabak";
   public static final String LINE_BACKUP_TEMP_FILE = "line_chat_backup.tmp";
+  public static final String LINE_RESTORE_FILE = "line_chat_restore.pending";
+  public static final String LINE_RESTORE_TEMP_FILE = "line_chat_restore.tmp";
 
   private SharedPreferences prefs;
 
@@ -133,6 +135,15 @@ public final class ControlProvider extends ContentProvider {
         if (!isLineCaller()) throw new SecurityException("Only LINE may commit a chat backup");
         out.putBoolean("ok", commitLineBackup());
         return out;
+      case "commitLineRestore":
+        if (!isLineCaller()) throw new SecurityException("Only LINE may stage a chat restore");
+        out.putBoolean("ok", moveStoreFile(LINE_RESTORE_TEMP_FILE, LINE_RESTORE_FILE));
+        return out;
+      case "finishLineRestore":
+        if (!isLineCaller()) throw new SecurityException("Only LINE may finish a chat restore");
+        out.putBoolean(
+            "ok", !storeFile(LINE_RESTORE_FILE).exists() || storeFile(LINE_RESTORE_FILE).delete());
+        return out;
       default:
         throw new IllegalArgumentException("Unknown control method");
     }
@@ -164,7 +175,9 @@ public final class ControlProvider extends ContentProvider {
             || name.equals("vector_read_history.bin")
             || name.equals("vector_edit_history.bin")
             || name.equals(LINE_BACKUP_FILE)
-            || name.equals(LINE_BACKUP_TEMP_FILE))) {
+            || name.equals(LINE_BACKUP_TEMP_FILE)
+            || name.equals(LINE_RESTORE_FILE)
+            || name.equals(LINE_RESTORE_TEMP_FILE))) {
       throw new IllegalArgumentException("Invalid Tencha store file");
     }
     File dir = new File(getContext().getFilesDir(), "tencha_store");
@@ -175,8 +188,12 @@ public final class ControlProvider extends ContentProvider {
   }
 
   private boolean commitLineBackup() {
-    File source = storeFile(LINE_BACKUP_TEMP_FILE);
-    File destination = storeFile(LINE_BACKUP_FILE);
+    return moveStoreFile(LINE_BACKUP_TEMP_FILE, LINE_BACKUP_FILE);
+  }
+
+  private boolean moveStoreFile(String sourceName, String destinationName) {
+    File source = storeFile(sourceName);
+    File destination = storeFile(destinationName);
     if (!source.isFile() || source.length() == 0L) return false;
     try {
       try {
@@ -203,7 +220,8 @@ public final class ControlProvider extends ContentProvider {
         prefs.edit().putString(PREFIX_STATUS + id, status).putString(PREFIX_DETAIL + id, detail);
     if (FeatureStatus.HOOK_FAILED.name().equals(status)) {
       edit.putInt(PREFIX_FAILURES + id, failures + 1).putLong(PREFIX_FAILURE + id, now);
-    } else if (FeatureStatus.WORKING.name().equals(status)) {
+    } else if (FeatureStatus.WORKING.name().equals(status)
+        || FeatureStatus.VERIFYING.name().equals(status)) {
       edit.putInt(PREFIX_FAILURES + id, 0).putLong(PREFIX_SUCCESS + id, now);
     }
     edit.apply();

@@ -271,7 +271,7 @@ public class ModuleStrings {
   public static final String OPT_BACKUP_LABEL = "トーク履歴のバックアップ";
   public static final String OPT_BACKUP_DESC = "Tencha内部へ保存後、そのまま端末やGoogle Driveへ書き出します。";
   public static final String OPT_RESTORE_LABEL = "トーク履歴の復元";
-  public static final String OPT_RESTORE_DESC = "Tencha内部の最新バックアップから復元します。現在の履歴が上書きされます。";
+  public static final String OPT_RESTORE_DESC = "Tencha内部、端末、Google Driveのバックアップから復元します。";
 
   public static final String REACTION_NOTIF_TITLE = "%sが以下のメッセージにリアクションしました";
 

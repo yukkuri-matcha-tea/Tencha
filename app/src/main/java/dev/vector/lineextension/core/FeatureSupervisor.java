@@ -16,19 +16,29 @@ public final class FeatureSupervisor {
   }
 
   public String idFor(Object feature) {
-    String name = feature.getClass().getSimpleName();
+    return idForName(feature.getClass().getSimpleName());
+  }
+
+  static String idForName(String name) {
     if (name.contains("ReadReceipt")) return "read_block";
     if (name.contains("Unsend")) return "unsend_retention";
     if (name.contains("Timestamp")) return "message_seconds";
-    if (name.contains("Ad") || name.contains("HomeContents")) return "ad_removal";
+    if (name.equals("RemoveAds")) return "ad_removal";
+    if (name.equals("RemoveHomeContents")) return "remove_home_contents";
     if (name.contains("Tab")) return "tab_customizer";
-    if (name.contains("Fcm") || name.contains("Foreground")) return "fcm_fix";
-    if (name.contains("Agent") || name.contains("AiIcon")) return "agenti_hider";
-    if (name.contains("Search")) return "search_enhancement";
+    if (name.contains("Fcm")) return "fcm_fix";
+    if (name.contains("Foreground")) return "line_foreground_keep_alive";
+    if (name.equals("HideAiIconPermanently")) return "agenti_hider";
+    if (name.equals("RemoveTalkRoomAgentIToggle")) return "remove_talk_room_agenti_toggle";
+    if (name.equals("SearchMin1CharHook")) return "search_enhancement";
+    if (name.equals("SearchResultCountHook")) return "search_result_count";
+    if (name.equals("SearchByMemberHook")) return "search_by_member";
     if (name.contains("Font")) return "custom_font";
-    if (name.contains("Image") || name.contains("Video")) return "media_quality";
+    if (name.contains("Image")) return "media_quality";
+    if (name.contains("Video")) return "long_video";
     if (name.contains("Browser")) return "external_browser";
-    if (name.contains("Menu") || name.contains("Header")) return "menu_customizer";
+    if (name.contains("Menu")) return "menu_customizer";
+    if (name.contains("Header")) return "header_customizer";
     if (name.contains("Settings")) return "line_settings_ui";
     return name.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase(Locale.ROOT);
   }
