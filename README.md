@@ -24,7 +24,7 @@ root版APKと非root版LSPatchセットは[GitHub Releases](https://github.com/y
 
 ### Root端末
 
-1. Releasesから`Tencha-root-1.5.12.apk`をインストールします。
+1. Releasesから`Tencha-root-1.5.13.apk`をインストールします。
 2. Vectorで「Tencha」を有効化します。
 3. スコープはLINE (`jp.naver.line.android`) だけにします。
 4. モジュールAPKを開き、「機能設定」から必要な機能をONにします。
@@ -81,6 +81,10 @@ $env:ANDROID_HOME = 'C:\Users\name\AppData\Local\Android\Sdk'
 ```
 
 生成先は`app/build/outputs/apk/debug/app-debug.apk`です。
+
+## Release公開
+
+`app/build.gradle`の`versionName`と同じ`v<version>`タグをpushすると、GitHub Actionsがテスト、APKビルド、署名、rootless kit作成、SHA-256生成、GitHub Release公開まで自動実行します。署名鍵はGitHub Actions Secretから復元し、リポジトリには含めません。
 
 ## Tencha固有部分とライセンス
 

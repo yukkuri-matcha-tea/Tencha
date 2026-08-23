@@ -604,10 +604,30 @@ private fun DiagnosticsScreen(
 private fun AboutScreen(onNavigate: (Screen) -> Unit, snackbar: SnackbarHostState) {
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
-  var updateInfo by remember { mutableStateOf<GitHubUpdater.UpdateInfo?>(null) }
   var downloadedApk by remember { mutableStateOf<java.io.File?>(null) }
-  var updateStatus by remember { mutableStateOf("GitHub Releasesから最新版を確認します") }
+  var updateStatus by remember { mutableStateOf("1回押すだけで最新版へ更新します") }
   var updateBusy by remember { mutableStateOf(false) }
+  val installPermissionLauncher =
+    rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+      val readyApk = downloadedApk
+      when {
+        readyApk == null || !readyApk.isFile -> {
+          updateStatus = "ダウンロード済みAPKが見つかりません"
+        }
+        !GitHubUpdater.canRequestInstall(context) -> {
+          updateStatus = "インストールの許可が必要です"
+          scope.launch { snackbar.showSnackbar("Tenchaからのアプリインストールを許可してください") }
+        }
+        else -> {
+          runCatching { GitHubUpdater.launchInstaller(context, readyApk) }
+            .onSuccess { updateStatus = "インストーラーを開きました" }
+            .onFailure {
+              updateStatus = "インストーラーを開けませんでした"
+              scope.launch { snackbar.showSnackbar("インストーラーを開けません: ${it.message.orEmpty()}") }
+            }
+        }
+      }
+    }
   Scaffold(
     topBar = { TopAppBar(title = { Text("Tenchaについて") }) },
     bottomBar = { TenchaNavigationBar(Screen.ABOUT, onNavigate) },
@@ -646,61 +666,51 @@ private fun AboutScreen(onNavigate: (Screen) -> Unit, snackbar: SnackbarHostStat
               enabled = !updateBusy,
               onClick = {
                 val readyApk = downloadedApk
-                val available = updateInfo
-                when {
-                  readyApk != null -> {
-                    if (GitHubUpdater.canRequestInstall(context)) {
-                      runCatching { GitHubUpdater.launchInstaller(context, readyApk) }
-                        .onFailure { scope.launch { snackbar.showSnackbar("インストーラーを開けません: ${it.message.orEmpty()}") } }
-                    } else {
-                      GitHubUpdater.openInstallPermission(context)
-                      scope.launch { snackbar.showSnackbar("Tenchaからのアプリインストールを許可して、もう一度押してください") }
-                    }
+                if (readyApk != null && readyApk.isFile) {
+                  if (GitHubUpdater.canRequestInstall(context)) {
+                    runCatching { GitHubUpdater.launchInstaller(context, readyApk) }
+                      .onSuccess { updateStatus = "インストーラーを開きました" }
+                      .onFailure { scope.launch { snackbar.showSnackbar("インストーラーを開けません: ${it.message.orEmpty()}") } }
+                  } else {
+                    updateStatus = "インストールの許可を有効にしてください"
+                    installPermissionLauncher.launch(GitHubUpdater.installPermissionIntent(context))
                   }
-                  available != null -> {
-                    updateBusy = true
+                  return@Button
+                }
+
+                updateBusy = true
+                updateStatus = "最新版を確認しています…"
+                scope.launch {
+                  try {
+                    val available = withContext(Dispatchers.IO) { GitHubUpdater.checkLatest() }
+                    if (!available.isNewerThanCurrent) {
+                      updateStatus = "最新版です（v${BuildConfig.VERSION_NAME}）"
+                      return@launch
+                    }
+
                     updateStatus = "v${available.version} をダウンロードしています…"
-                    scope.launch {
-                      val result = withContext(Dispatchers.IO) { runCatching { GitHubUpdater.downloadAndVerify(context, available) } }
-                      updateBusy = false
-                      result.onSuccess {
-                        downloadedApk = it
-                        updateStatus = "v${available.version} の署名とSHA-256を確認しました"
-                      }.onFailure {
-                        updateStatus = "ダウンロードまたは検証に失敗しました"
-                        snackbar.showSnackbar(it.message ?: "更新に失敗しました")
-                      }
+                    val apk = withContext(Dispatchers.IO) { GitHubUpdater.downloadAndVerify(context, available) }
+                    downloadedApk = apk
+                    updateStatus = "検証完了。インストーラーを開きます…"
+                    updateBusy = false
+
+                    if (GitHubUpdater.canRequestInstall(context)) {
+                      GitHubUpdater.launchInstaller(context, apk)
+                      updateStatus = "インストーラーを開きました"
+                    } else {
+                      updateStatus = "インストールの許可を有効にしてください"
+                      installPermissionLauncher.launch(GitHubUpdater.installPermissionIntent(context))
                     }
-                  }
-                  else -> {
-                    updateBusy = true
-                    updateStatus = "最新版を確認しています…"
-                    scope.launch {
-                      val result = withContext(Dispatchers.IO) { runCatching { GitHubUpdater.checkLatest() } }
-                      updateBusy = false
-                      result.onSuccess {
-                        if (it.isNewerThanCurrent) {
-                          updateInfo = it
-                          updateStatus = "v${it.version} を利用できます"
-                        } else {
-                          updateStatus = "最新版です（v${BuildConfig.VERSION_NAME}）"
-                        }
-                      }.onFailure {
-                        updateStatus = "更新を確認できませんでした"
-                        snackbar.showSnackbar(it.message ?: "GitHubへ接続できません")
-                      }
-                    }
+                  } catch (error: Exception) {
+                    updateStatus = "更新に失敗しました"
+                    snackbar.showSnackbar(error.message ?: "GitHubへ接続できません")
+                  } finally {
+                    updateBusy = false
                   }
                 }
               },
             ) {
-              Text(
-                when {
-                  downloadedApk != null -> "インストール"
-                  updateInfo != null -> "v${updateInfo!!.version} をダウンロード"
-                  else -> "更新を確認"
-                },
-              )
+              Text(if (updateBusy) "更新中…" else "最新版へ更新")
             }
             Text(
               "APKの署名とSHA-256を検証してから更新します。",

@@ -1,0 +1,118 @@
+name: Publish Tencha release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: sdkmanager "platforms;android-37"
+
+      - name: Restore stable signing key
+        env:
+          TENCHA_KEYSTORE_BASE64: ${{ secrets.TENCHA_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$TENCHA_KEYSTORE_BASE64"
+          mkdir -p "$HOME/.android"
+          printf '%s' "$TENCHA_KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
+          chmod 600 "$HOME/.android/debug.keystore"
+
+      - name: Validate release version
+        id: version
+        shell: bash
+        run: |
+          VERSION="$(sed -n 's/^[[:space:]]*versionName "\([^"]*\)"/\1/p' app/build.gradle)"
+          test -n "$VERSION"
+          test "${GITHUB_REF_NAME}" = "v${VERSION}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Test and build APK
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon spotlessCheck testDebugUnitTest lintDebug assembleDebug
+
+      - name: Verify APK signature
+        shell: bash
+        run: |
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose app/build/outputs/apk/debug/app-debug.apk
+          "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk \
+            | grep -qi 'fd54f8c2099c53528753a59262a5203801995eff926e1151ab69ffdf54355615'
+
+      - name: Package release files
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_DIR="build/release-$VERSION"
+          KIT_DIR="$RELEASE_DIR/rootless-kit"
+          mkdir -p "$KIT_DIR"
+
+          cp app/build/outputs/apk/debug/app-debug.apk "$RELEASE_DIR/Tencha-root-$VERSION.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$RELEASE_DIR/Tencha-rootless-module-$VERSION.apk"
+          cp "$RELEASE_DIR/Tencha-rootless-module-$VERSION.apk" "$KIT_DIR/"
+          cp rootless/Build-TenchaRootless.ps1 rootless/LSPATCH-NOTICE.md rootless/README.md "$KIT_DIR/"
+
+          curl --fail --location --retry 3 \
+            --output "$KIT_DIR/LSPatch-Manager-v1.1-474.apk" \
+            https://github.com/JingMatrix/LSPatch/releases/download/v1.1/manager-v1.1-474-release.apk
+          curl --fail --location --retry 3 \
+            --output "$KIT_DIR/lspatch-v1.1-474-release.jar" \
+            https://github.com/JingMatrix/LSPatch/releases/download/v1.1/lspatch-v1.1-474-release.jar
+
+          echo "ab3e1f74c63b1eaa9ce5e0e182cce036ab7dca4586d89415bf9b553eaa4f9b9f  $KIT_DIR/LSPatch-Manager-v1.1-474.apk" | sha256sum --check
+          echo "2bd285c6ac6e8878d04304f8d761e0d3c56ab05e6ef0c04da7f94f0419e8ce75  $KIT_DIR/lspatch-v1.1-474-release.jar" | sha256sum --check
+
+          (
+            cd "$KIT_DIR"
+            sha256sum Build-TenchaRootless.ps1 LSPatch-Manager-v1.1-474.apk LSPATCH-NOTICE.md \
+              lspatch-v1.1-474-release.jar README.md "Tencha-rootless-module-$VERSION.apk" > HASHES.sha256
+          )
+          (
+            cd "$RELEASE_DIR"
+            zip -9 -r "Tencha-rootless-kit-$VERSION.zip" rootless-kit
+            sha256sum "Tencha-root-$VERSION.apk" "Tencha-rootless-module-$VERSION.apk" \
+              "Tencha-rootless-kit-$VERSION.zip" > "Tencha-$VERSION-SHA256SUMS.txt"
+          )
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Tencha ${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            build/release-${{ steps.version.outputs.version }}/Tencha-root-${{ steps.version.outputs.version }}.apk
+            build/release-${{ steps.version.outputs.version }}/Tencha-rootless-module-${{ steps.version.outputs.version }}.apk
+            build/release-${{ steps.version.outputs.version }}/Tencha-rootless-kit-${{ steps.version.outputs.version }}.zip
+            build/release-${{ steps.version.outputs.version }}/Tencha-${{ steps.version.outputs.version }}-SHA256SUMS.txt

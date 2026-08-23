@@ -153,11 +153,13 @@ public final class GitHubUpdater {
   }
 
   public static void openInstallPermission(Context context) {
-    Intent intent =
-        new Intent(
-            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-            Uri.parse("package:" + context.getPackageName()));
-    context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+    context.startActivity(installPermissionIntent(context).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+  }
+
+  public static Intent installPermissionIntent(Context context) {
+    return new Intent(
+        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+        Uri.parse("package:" + context.getPackageName()));
   }
 
   public static void launchInstaller(Context context, File apk) {
