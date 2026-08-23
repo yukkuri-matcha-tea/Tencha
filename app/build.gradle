@@ -60,6 +60,7 @@ android {
 
 spotless {
     java {
+        lineEndings 'UNIX'
         target 'src/*/java/**/*.java'
         toggleOffOn('@formatter:off', '@formatter:on')
         googleJavaFormat('1.25.0').reflowLongStrings(false)
