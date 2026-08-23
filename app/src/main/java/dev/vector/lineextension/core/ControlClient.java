@@ -123,10 +123,12 @@ public final class ControlClient {
     }
   }
 
-  public static void reportSession(Context context, String lineVersion, String processName) {
+  public static void reportSession(
+      Context context, String lineVersion, String processName, String loaderMode) {
     Bundle data = new Bundle();
     data.putString("lineVersion", lineVersion == null ? "" : lineVersion);
     data.putString("process", processName == null ? "" : processName);
+    data.putString("loaderMode", RuntimeEnvironment.sanitizeMode(loaderMode));
     call(context, "reportSession", null, data);
   }
 

@@ -86,6 +86,7 @@ import androidx.core.content.edit
 import dev.vector.lineextension.core.ControlClient
 import dev.vector.lineextension.core.FeatureStatus
 import dev.vector.lineextension.core.GitHubUpdater
+import dev.vector.lineextension.core.RuntimeEnvironment
 import dev.vector.lineextension.core.TenchaBackup
 import java.text.DateFormat
 import java.text.SimpleDateFormat
@@ -158,6 +159,16 @@ internal fun matchesFeatureFilter(
   return matchesQuery && (!experimentalOnly || experimental) && (!enabledOnly || enabled)
 }
 
+internal fun shouldShowRootlessSetup(hasConnected: Boolean, hasRootEvidence: Boolean): Boolean =
+  !hasConnected && !hasRootEvidence
+
+private fun runtimeModeLabel(mode: String): String =
+  when (mode) {
+    RuntimeEnvironment.MODE_ROOT -> "Vector経由で動作中（root）"
+    RuntimeEnvironment.MODE_LSPATCH -> "LSPatch経由で動作中（非root）"
+    else -> "接続済み（実行方式を判定できません）"
+  }
+
 private val visibleFeatures =
   listOf(
     FeatureRow("read_block", "既読", "無効"),
@@ -195,6 +206,7 @@ private fun VectorApp() {
   var screen by remember { mutableStateOf(Screen.HOME) }
   var snapshot by remember { mutableStateOf(ControlClient.snapshot(context)) }
   var settings by remember { mutableStateOf(ControlClient.settingsSnapshot(context)) }
+  val hasRootEvidence = remember { RuntimeEnvironment.hasRootEvidence(context) }
   val updatePrefs = remember { context.getSharedPreferences(UPDATE_CHECK_PREFS, android.content.Context.MODE_PRIVATE) }
   var updateAvailable by remember {
     mutableStateOf(
@@ -245,7 +257,14 @@ private fun VectorApp() {
       Screen.HOME -> DashboardScreen(snapshot, ::refresh, { screen = it; refresh() }, snackbar, updateAvailable)
       Screen.SETTINGS -> SettingsScreen(settings, { settings = ControlClient.settingsSnapshot(context) }, { screen = it; refresh() }, snackbar, updateAvailable)
       Screen.DIAGNOSTICS -> DiagnosticsScreen(snapshot, ::refresh, { screen = it; refresh() }, snackbar, updateAvailable)
-      Screen.ABOUT -> AboutScreen({ screen = it }, snackbar, updateAvailable, ::recordUpdateResult)
+      Screen.ABOUT ->
+        AboutScreen(
+          { screen = it },
+          snackbar,
+          updateAvailable,
+          ::recordUpdateResult,
+          shouldShowRootlessSetup(snapshot.getLong("lastLineSeen", 0L) > 0L, hasRootEvidence),
+        )
       Screen.ROOTLESS -> RootlessSetupScreen({ screen = Screen.ABOUT }, snackbar)
     }
   }
@@ -265,6 +284,7 @@ private fun DashboardScreen(
   val lineVersion = remember { installedLineVersion(context.packageManager) }
   val lastSeen = snapshot.getLong("lastLineSeen", 0L)
   val connected = lastSeen > 0L
+  val loaderMode = snapshot.getString("loaderMode", RuntimeEnvironment.MODE_UNKNOWN)
   var nextLaunchOff by remember(snapshot) { mutableStateOf(snapshot.getBoolean("nextLaunchOff", false)) }
   val featureStates = visibleFeatures.map { it to snapshot.getBundle("feature.${it.id}") }
   val workingCount = featureStates.count { (_, state) -> state?.getString("status") == FeatureStatus.WORKING.name }
@@ -312,6 +332,13 @@ private fun DashboardScreen(
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold,
               )
+              if (connected) {
+                Text(
+                  runtimeModeLabel(loaderMode),
+                  style = MaterialTheme.typography.bodyLarge,
+                  fontWeight = FontWeight.Medium,
+                )
+              }
               Text(
                 if (connected) "最終接続 ${formatTime(lastSeen)}" else "VectorでTenchaを有効にしてLINEを再起動してください",
                 style = if (connected) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodyMedium,
@@ -774,6 +801,7 @@ private fun AboutScreen(
   snackbar: SnackbarHostState,
   updateAvailable: Boolean,
   onUpdateResult: (Boolean, String?) -> Unit,
+  showRootlessSetup: Boolean,
 ) {
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
@@ -893,13 +921,15 @@ private fun AboutScreen(
           }
         }
       }
-      item {
-        Card {
-          ListItem(
-            headlineContent = { Text("rootなしで使う") },
-            supportingContent = { Text("LSPatch版セットアップ") },
-            trailingContent = { TextButton(onClick = { onNavigate(Screen.ROOTLESS) }) { Text("設定") } },
-          )
+      if (showRootlessSetup) {
+        item {
+          Card {
+            ListItem(
+              headlineContent = { Text("rootなしで使う") },
+              supportingContent = { Text("LINEへ未接続の非root環境向け") },
+              trailingContent = { TextButton(onClick = { onNavigate(Screen.ROOTLESS) }) { Text("設定") } },
+            )
+          }
         }
       }
       item { SectionTitle("開発者") }

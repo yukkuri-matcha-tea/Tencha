@@ -8,7 +8,12 @@
     <queries>
         <package android:name="jp.naver.line.android" />
         <package android:name="org.lsposed.lspatch" />
+        <package android:name="org.lsposed.manager" />
         <package android:name="moe.shizuku.privileged.api" />
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="org.matrix.vector.manager.LAUNCH_MANAGER" />
+        </intent>
     </queries>
 
     <application

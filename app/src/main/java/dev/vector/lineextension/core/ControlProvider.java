@@ -39,6 +39,7 @@ public final class ControlProvider extends ContentProvider {
   private static final String LAST_LINE_SEEN = "runtime.last_line_seen";
   private static final String LAST_LINE_VERSION = "runtime.line_version";
   private static final String LAST_LINE_PROCESS = "runtime.line_process";
+  private static final String LAST_LOADER_MODE = "runtime.loader_mode";
   public static final String LINE_BACKUP_FILE = "line_chat_backup.tenchabak";
   public static final String LINE_BACKUP_TEMP_FILE = "line_chat_backup.tmp";
   public static final String LINE_RESTORE_FILE = "line_chat_restore.pending";
@@ -93,7 +94,10 @@ public final class ControlProvider extends ContentProvider {
                 .putLong(LAST_LINE_SEEN, System.currentTimeMillis())
                 .putString(
                     LAST_LINE_VERSION, sanitizeText(session.getString("lineVersion", ""), 64))
-                .putString(LAST_LINE_PROCESS, sanitizeText(session.getString("process", ""), 128));
+                .putString(LAST_LINE_PROCESS, sanitizeText(session.getString("process", ""), 128))
+                .putString(
+                    LAST_LOADER_MODE,
+                    RuntimeEnvironment.sanitizeMode(session.getString("loaderMode", "")));
         for (String key : prefs.getAll().keySet()) {
           if (key.startsWith(PREFIX_STATUS)) {
             String id = key.substring(PREFIX_STATUS.length());
@@ -245,6 +249,7 @@ public final class ControlProvider extends ContentProvider {
     out.putLong("lastLineSeen", prefs.getLong(LAST_LINE_SEEN, 0L));
     out.putString("lineVersion", prefs.getString(LAST_LINE_VERSION, ""));
     out.putString("lineProcess", prefs.getString(LAST_LINE_PROCESS, ""));
+    out.putString("loaderMode", prefs.getString(LAST_LOADER_MODE, RuntimeEnvironment.MODE_UNKNOWN));
     Set<String> ids = new HashSet<>();
     for (Map.Entry<String, ?> entry : prefs.getAll().entrySet()) {
       if (entry.getKey().startsWith(PREFIX_STATUS)) {

@@ -6,6 +6,14 @@ import org.junit.Test
 
 class FeatureFilterTest {
   @Test
+  fun rootlessSetupIsOnlyShownBeforeConnectionWithoutRootEvidence() {
+    assertTrue(shouldShowRootlessSetup(hasConnected = false, hasRootEvidence = false))
+    assertFalse(shouldShowRootlessSetup(hasConnected = true, hasRootEvidence = false))
+    assertFalse(shouldShowRootlessSetup(hasConnected = false, hasRootEvidence = true))
+    assertFalse(shouldShowRootlessSetup(hasConnected = true, hasRootEvidence = true))
+  }
+
+  @Test
   fun noFiltersIncludesEveryFeature() {
     assertTrue(matchesFeatureFilter("通知", "通知を改善します", "", false, false, false, false))
   }

@@ -6,6 +6,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import dev.vector.lineextension.core.ControlClient;
 import dev.vector.lineextension.core.FeatureSupervisor;
+import dev.vector.lineextension.core.RuntimeEnvironment;
 import dev.vector.lineextension.hooks.*;
 import dev.vector.lineextension.utils.ModuleStrings;
 import io.github.libxposed.api.XposedModule;
@@ -79,7 +80,10 @@ public class Main extends XposedModule {
       // LINE opens its databases. Never replace a live SQLite database from the settings Activity.
       BackupRestoreHook.applyPendingRestore(context);
       ControlClient.reportSession(
-          context, LineVersion.getDetectedVersionName(), lpparam.processName);
+          context,
+          LineVersion.getDetectedVersionName(),
+          lpparam.processName,
+          RuntimeEnvironment.detectLoaderMode(lpparam.classLoader));
       if (ControlClient.consumeNextLaunchOff(context)) {
         SettingsStore.setLoaded(true);
         Vector.log("Tencha: all extensions disabled for this LINE launch");
