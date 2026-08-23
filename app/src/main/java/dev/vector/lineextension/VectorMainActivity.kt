@@ -10,6 +10,16 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -54,7 +64,6 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -137,13 +146,6 @@ private val experimentalKeys =
     "spoof_version", "spoof_version_unsend_only", "fix_signature_mismatch", "long_video",
   )
 
-private val recommendedPreset =
-  setOf(
-    "show_seconds_in_chat_time", "open_url_in_default_browser", "remove_ads",
-    "remove_home_recommendations", "remove_home_services", "remove_home_accordion",
-    "hide_ai_icon_permanently", "remove_search_bar_agent_i_button", "search_min_1_char",
-  )
-
 @Composable
 private fun VectorApp() {
   val context = LocalContext.current
@@ -157,8 +159,16 @@ private fun VectorApp() {
     settings = ControlClient.settingsSnapshot(context)
   }
 
-  key(screen) {
-    when (screen) {
+  AnimatedContent(
+    targetState = screen,
+    transitionSpec = {
+      val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
+      (slideInHorizontally(animationSpec = tween(240)) { direction * it / 8 } + fadeIn(tween(180)))
+        .togetherWith(slideOutHorizontally(animationSpec = tween(200)) { -direction * it / 8 } + fadeOut(tween(140)))
+    },
+    label = "Tencha screen",
+  ) { currentScreen ->
+    when (currentScreen) {
       Screen.HOME -> DashboardScreen(snapshot, ::refresh, { screen = it; refresh() }, snackbar)
       Screen.SETTINGS -> SettingsScreen(settings, { settings = ControlClient.settingsSnapshot(context) }, { screen = it; refresh() }, snackbar)
       Screen.DIAGNOSTICS -> DiagnosticsScreen(snapshot, ::refresh, { screen = it; refresh() }, snackbar)
@@ -205,8 +215,16 @@ private fun DashboardScreen(
       verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       item {
-        val containerColor = if (connected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
-        val contentColor = if (connected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
+        val containerColor by animateColorAsState(
+          if (connected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
+          animationSpec = tween(300),
+          label = "Connection background",
+        )
+        val contentColor by animateColorAsState(
+          if (connected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+          animationSpec = tween(300),
+          label = "Connection content",
+        )
         Card(colors = CardDefaults.cardColors(containerColor = containerColor, contentColor = contentColor)) {
           Row(
             modifier = Modifier.fillMaxWidth().padding(20.dp),
@@ -322,7 +340,6 @@ private fun SettingsScreen(
   val developerModeEnabled =
     if (boolKeys.contains("developer_mode")) settings.getBoolean("bool.developer_mode", false) else false
   var showResetDialog by remember { mutableStateOf(false) }
-  var showPresetDialog by remember { mutableStateOf(false) }
   var showBlockedChatsDialog by remember { mutableStateOf(false) }
   var showRestoreDialog by remember { mutableStateOf(false) }
 
@@ -414,22 +431,6 @@ private fun SettingsScreen(
     )
   }
 
-  if (showPresetDialog) {
-    AlertDialog(
-      onDismissRequest = { showPresetDialog = false },
-      title = { Text("おすすめ設定を適用") },
-      text = { Text("秒表示、既定ブラウザ、広告・おすすめ非表示、AgentI非表示、1文字検索をONにします。既読回避やFCM実験機能は含みません。") },
-      confirmButton = {
-        TextButton(onClick = {
-          recommendedPreset.forEach { ControlClient.putSetting(context, it, true) }
-          onSettingsChanged(); showPresetDialog = false
-          scope.launch { snackbar.showSnackbar("適用しました。LINEを完全終了して再起動してください") }
-        }) { Text("適用") }
-      },
-      dismissButton = { TextButton(onClick = { showPresetDialog = false }) { Text("キャンセル") } },
-    )
-  }
-
   Scaffold(
     topBar = {
       TopAppBar(
@@ -445,14 +446,6 @@ private fun SettingsScreen(
       contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
       verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-      item {
-        Card {
-          Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("おすすめ設定", style = MaterialTheme.typography.titleMedium)
-            FilledTonalButton(onClick = { showPresetDialog = true }) { Text("内容を確認") }
-          }
-        }
-      }
       item {
         Card {
           ListItem(
@@ -644,8 +637,12 @@ private fun AboutScreen(onNavigate: (Screen) -> Unit, snackbar: SnackbarHostStat
             verticalArrangement = Arrangement.spacedBy(10.dp),
           ) {
             Text("アプリの更新", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            updateStatus?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            if (updateBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            AnimatedVisibility(visible = updateStatus != null, enter = fadeIn(tween(180)), exit = fadeOut(tween(120))) {
+              updateStatus?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+            AnimatedVisibility(visible = updateBusy, enter = fadeIn(tween(180)), exit = fadeOut(tween(120))) {
+              LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
             Button(
               modifier = Modifier.fillMaxWidth(),
               enabled = !updateBusy,
@@ -870,21 +867,27 @@ private fun RowScope.NavigationItem(
   selected: Screen,
   onNavigate: (Screen) -> Unit,
 ) {
+  val iconSize by animateDpAsState(
+    targetValue = if (selected == screen) 26.dp else 24.dp,
+    animationSpec = tween(200),
+    label = "$label icon",
+  )
   NavigationBarItem(
     selected = selected == screen,
     onClick = { if (selected != screen) onNavigate(screen) },
-    icon = { Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(24.dp)) },
+    icon = { Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(iconSize)) },
     label = { Text(label) },
   )
 }
 
 @Composable
 private fun StatusDot(status: String) {
-  val color = when (status) {
+  val targetColor = when (status) {
     "動作中", "接続済み" -> MaterialTheme.colorScheme.primary
     "Hook失敗", "Safe Mode", "未接続" -> MaterialTheme.colorScheme.error
     else -> MaterialTheme.colorScheme.outline
   }
+  val color by animateColorAsState(targetColor, animationSpec = tween(250), label = "Status color")
   Box(Modifier.size(10.dp).background(color, CircleShape))
 }
 
