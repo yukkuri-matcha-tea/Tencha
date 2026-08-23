@@ -44,6 +44,9 @@ jobs:
           mkdir -p "$HOME/.android"
           printf '%s' "$TENCHA_KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
           chmod 600 "$HOME/.android/debug.keystore"
+          CERT_SHA256="$(keytool -exportcert -keystore "$HOME/.android/debug.keystore" \
+            -storepass android -alias androiddebugkey | sha256sum | cut -d ' ' -f1)"
+          test "$CERT_SHA256" = "fd54f8c2099c53528753a59262a5203801995eff926e1151ab69ffdf54355615"
 
       - name: Validate release version
         id: version
@@ -65,8 +68,6 @@ jobs:
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
           test -x "$APKSIGNER"
           "$APKSIGNER" verify --verbose app/build/outputs/apk/debug/app-debug.apk
-          "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk \
-            | grep -qi 'fd54f8c2099c53528753a59262a5203801995eff926e1151ab69ffdf54355615'
 
       - name: Package release files
         env:
