@@ -205,13 +205,6 @@ private fun DashboardScreen(
       verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       item {
-        Text(
-          "Enhance your LINE.",
-          style = MaterialTheme.typography.bodyLarge,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-      }
-      item {
         val containerColor = if (connected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
         val contentColor = if (connected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
         Card(colors = CardDefaults.cardColors(containerColor = containerColor, contentColor = contentColor)) {
@@ -228,12 +221,8 @@ private fun DashboardScreen(
                 fontWeight = FontWeight.SemiBold,
               )
               Text(
-                if (connected) "Tenchaは正常に動作しています" else "VectorでTenchaを有効にしてLINEを再起動してください",
-                style = MaterialTheme.typography.bodyMedium,
-              )
-              Text(
-                if (connected) "最終接続 ${formatTime(lastSeen)}" else "接続すると機能状態が反映されます",
-                style = MaterialTheme.typography.labelMedium,
+                if (connected) "最終接続 ${formatTime(lastSeen)}" else "VectorでTenchaを有効にしてLINEを再起動してください",
+                style = if (connected) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodyMedium,
               )
             }
           }
@@ -244,17 +233,14 @@ private fun DashboardScreen(
           Column {
             ListItem(
               headlineContent = { Text("LINE") },
-              supportingContent = { Text("対象アプリのバージョン") },
               trailingContent = { Text(lineVersion ?: "未導入", style = MaterialTheme.typography.labelLarge) },
             )
             ListItem(
               headlineContent = { Text("Tencha") },
-              supportingContent = { Text("モジュールのバージョン") },
               trailingContent = { Text(BuildConfig.VERSION_NAME, style = MaterialTheme.typography.labelLarge) },
             )
             ListItem(
               headlineContent = { Text("動作中の機能") },
-              supportingContent = { Text("Runtime報告を受信済み") },
               trailingContent = { Text("$workingCount / ${visibleFeatures.size}", style = MaterialTheme.typography.labelLarge) },
             )
           }
@@ -462,9 +448,8 @@ private fun SettingsScreen(
       item {
         Card {
           Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("安全な実用プリセット", style = MaterialTheme.typography.titleMedium)
-            Text("日常機能だけをまとめて有効化します。各項目は後から個別に変更できます。", style = MaterialTheme.typography.bodyMedium)
-            FilledTonalButton(onClick = { showPresetDialog = true }) { Text("おすすめを適用") }
+            Text("おすすめ設定", style = MaterialTheme.typography.titleMedium)
+            FilledTonalButton(onClick = { showPresetDialog = true }) { Text("内容を確認") }
           }
         }
       }
@@ -472,8 +457,8 @@ private fun SettingsScreen(
         Card {
           ListItem(
             headlineContent = { Text("既読回避中のトークを管理") },
-            supportingContent = { Text("登録 ${blockedChats.length()} 件 / 個別解除できます") },
-            trailingContent = { TextButton(onClick = { showBlockedChatsDialog = true }) { Text("開く") } },
+            supportingContent = { Text("登録 ${blockedChats.length()} 件") },
+            trailingContent = { TextButton(onClick = { showBlockedChatsDialog = true }) { Text("管理") } },
           )
         }
       }
@@ -481,8 +466,8 @@ private fun SettingsScreen(
         Card {
           Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("バックアップ", style = MaterialTheme.typography.titleMedium)
-            Text("端末のフォルダまたはGoogle Driveへ、Tenchaの設定・履歴とLINE内で作成したトーク履歴バックアップを保存します。", style = MaterialTheme.typography.bodyMedium)
-            Text("履歴を含むため、作成したファイルの共有には注意してください。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("設定・履歴・トーク履歴を端末またはGoogle Driveへ保存します。", style = MaterialTheme.typography.bodyMedium)
+            Text("履歴を含むため、共有には注意してください。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
               FilledTonalButton(
                 modifier = Modifier.fillMaxWidth(),
@@ -515,7 +500,7 @@ private fun SettingsScreen(
               supportingContent = {
                 Column {
                   if (option.description.isNotBlank()) Text(option.description)
-                  if (experimental) Text("実験的機能・不具合時は個別にOFF", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium)
+                  if (experimental) Text("実験的", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium)
                   if (option.key == "custom_font_path") Text("フォント選択はLINE内の拡張設定から行います")
                   if (option.key == "home_tab_type") Text("ホーム種別の選択はLINE内の拡張設定から行います")
                   if (option.key == "fcm_fix_mode") Text("FCM方式の選択はLINE内の拡張設定から行います")
@@ -567,7 +552,7 @@ private fun DiagnosticsScreen(
         Card {
           Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("障害復旧", style = MaterialTheme.typography.titleMedium)
-            Text("Safe Modeは連続してHook登録に失敗した機能だけを停止します。個人情報やメッセージ本文は診断へ保存しません。")
+            Text("Hook登録に連続失敗した機能を停止します。")
             OutlinedButton(onClick = {
               val ok = ControlClient.clearAllSafeModes(context); onRefresh()
               scope.launch { snackbar.showSnackbar(if (ok) "Safe Modeを解除しました" else "解除に失敗しました") }
@@ -594,7 +579,7 @@ private fun DiagnosticsScreen(
           )
         }
       }
-      item { Text("「動作中」はRuntime実行報告が届いた場合だけ表示します。Hook登録済みは「確認中」です。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+      item { Text("実行を確認できた機能だけ「動作中」と表示します。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
   }
 }
@@ -605,7 +590,7 @@ private fun AboutScreen(onNavigate: (Screen) -> Unit, snackbar: SnackbarHostStat
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   var downloadedApk by remember { mutableStateOf<java.io.File?>(null) }
-  var updateStatus by remember { mutableStateOf("1回押すだけで最新版へ更新します") }
+  var updateStatus by remember { mutableStateOf<String?>(null) }
   var updateBusy by remember { mutableStateOf(false) }
   val installPermissionLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -648,7 +633,7 @@ private fun AboutScreen(onNavigate: (Screen) -> Unit, snackbar: SnackbarHostStat
             Icon(painterResource(R.drawable.ic_tencha_settings), contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
             Text("Tencha", style = MaterialTheme.typography.headlineSmall)
             Text("Enhance your LINE.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("Version ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelLarge)
+            Text("v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelLarge)
           }
         }
       }
@@ -659,7 +644,7 @@ private fun AboutScreen(onNavigate: (Screen) -> Unit, snackbar: SnackbarHostStat
             verticalArrangement = Arrangement.spacedBy(10.dp),
           ) {
             Text("アプリの更新", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(updateStatus, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            updateStatus?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             if (updateBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
             Button(
               modifier = Modifier.fillMaxWidth(),
@@ -712,11 +697,6 @@ private fun AboutScreen(onNavigate: (Screen) -> Unit, snackbar: SnackbarHostStat
             ) {
               Text(if (updateBusy) "更新中…" else "最新版へ更新")
             }
-            Text(
-              "APKの署名とSHA-256を検証してから更新します。",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
           }
         }
       }
@@ -724,12 +704,12 @@ private fun AboutScreen(onNavigate: (Screen) -> Unit, snackbar: SnackbarHostStat
         Card {
           ListItem(
             headlineContent = { Text("rootなしで使う") },
-            supportingContent = { Text("LSPatchとShizukuを使った非rootセットアップ") },
-            trailingContent = { TextButton(onClick = { onNavigate(Screen.ROOTLESS) }) { Text("開く") } },
+            supportingContent = { Text("LSPatch版セットアップ") },
+            trailingContent = { TextButton(onClick = { onNavigate(Screen.ROOTLESS) }) { Text("設定") } },
           )
         }
       }
-      item { SectionTitle("Creator") }
+      item { SectionTitle("開発者") }
       item {
         Card {
           Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -785,7 +765,7 @@ private fun RootlessSetupScreen(onBack: () -> Unit, snackbar: SnackbarHostState)
           Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("LSPatch版Tencha", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
             Text("rootやZygiskを使わず、利用者自身のLINEへTenchaを読み込ませます。", style = MaterialTheme.typography.bodyMedium)
-            Text("Shizukuはパッチ済みアプリのインストール補助に使います。", style = MaterialTheme.typography.bodySmall)
+            Text("Shizukuは任意です。", style = MaterialTheme.typography.bodySmall)
           }
         }
       }
@@ -835,7 +815,7 @@ private fun RootlessSetupScreen(onBack: () -> Unit, snackbar: SnackbarHostState)
             SetupStep("2", "Shizukuを起動", "任意。Android 11以降はワイヤレスデバッグから起動できます。")
             SetupStep("3", "LSPatchでLINEを選択", "Manager modeでLINEをパッチします。Split APKはLSPatchが一式として処理します。")
             SetupStep("4", "Tenchaを有効化", "LSPatchのモジュール画面でTenchaを選び、パッチ済みLINEへ適用します。")
-            SetupStep("5", "LINEを再起動", "Tenchaホームで接続状態と機能のRuntime報告を確認します。")
+            SetupStep("5", "LINEを再起動", "Tenchaホームで接続状態を確認します。")
           }
         }
       }
