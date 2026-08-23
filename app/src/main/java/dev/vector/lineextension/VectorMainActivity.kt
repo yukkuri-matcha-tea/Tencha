@@ -73,6 +73,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -128,6 +130,12 @@ private fun VectorTheme(content: @Composable () -> Unit) {
 }
 
 private enum class Screen { HOME, SETTINGS, DIAGNOSTICS, ABOUT, ROOTLESS }
+
+private val ScreenSaver =
+  Saver<Screen, String>(
+    save = { it.name },
+    restore = { name -> Screen.entries.firstOrNull { it.name == name } ?: Screen.HOME },
+  )
 
 private const val UPDATE_CHECK_PREFS = "tencha_update_check"
 private const val UPDATE_LAST_CHECKED_AT = "last_checked_at"
@@ -216,7 +224,7 @@ private val experimentalKeys =
 private fun VectorApp(resumeGeneration: Int) {
   val context = LocalContext.current
   val snackbar = remember { SnackbarHostState() }
-  var screen by remember { mutableStateOf(Screen.HOME) }
+  var screen by rememberSaveable(stateSaver = ScreenSaver) { mutableStateOf(Screen.HOME) }
   var snapshot by remember { mutableStateOf(ControlClient.snapshot(context)) }
   var settings by remember { mutableStateOf(ControlClient.settingsSnapshot(context)) }
   val hasRootEvidence = remember { RuntimeEnvironment.hasRootEvidence(context) }
@@ -460,9 +468,9 @@ private fun SettingsScreen(
   var showResetDialog by remember { mutableStateOf(false) }
   var showBlockedChatsDialog by remember { mutableStateOf(false) }
   var showRestoreDialog by remember { mutableStateOf(false) }
-  var searchQuery by remember { mutableStateOf("") }
-  var enabledOnly by remember { mutableStateOf(false) }
-  var experimentalOnly by remember { mutableStateOf(false) }
+  var searchQuery by rememberSaveable { mutableStateOf("") }
+  var enabledOnly by rememberSaveable { mutableStateOf(false) }
+  var experimentalOnly by rememberSaveable { mutableStateOf(false) }
 
   fun isEnabled(option: VectorConfig.Item): Boolean =
     if (boolKeys.contains(option.key)) settings.getBoolean("bool.${option.key}", option.enabled) else option.enabled
