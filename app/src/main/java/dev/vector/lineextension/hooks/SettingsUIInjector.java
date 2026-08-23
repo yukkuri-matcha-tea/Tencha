@@ -56,6 +56,7 @@ public class SettingsUIInjector implements BaseHook {
   private static final int PICK_DIRECTORY_CODE = 0x4C58;
   private static final int PICK_FONT_CODE = 0x4C59;
   private static final int PICK_RESTORE_DB_CODE = 0x4C5A;
+  private static final int EXPORT_CHAT_BACKUP_CODE = 0x4C5B;
   private static final VectorConfig.Category[] DISPLAY_CATEGORIES = {
     VectorConfig.Category.PRIVACY,
     VectorConfig.Category.CHAT,
@@ -387,6 +388,9 @@ public class SettingsUIInjector implements BaseHook {
     } else if (requestCode == PICK_RESTORE_DB_CODE) {
       handleRestoreDbPicked(chain);
       return null;
+    } else if (requestCode == EXPORT_CHAT_BACKUP_CODE) {
+      handleChatBackupExportPicked(chain);
+      return null;
     }
     return chain.proceed();
   }
@@ -445,6 +449,13 @@ public class SettingsUIInjector implements BaseHook {
     if (dbUri == null) return;
     Context ctx = (Context) chain.getThisObject();
     new Thread(() -> prepareRestoreDb(ctx, dbUri)).start();
+  }
+
+  private void handleChatBackupExportPicked(XposedInterface.Chain chain) {
+    if ((int) chain.getArg(1) != Activity.RESULT_OK || chain.getArg(2) == null) return;
+    Uri destination = ((Intent) chain.getArg(2)).getData();
+    if (destination == null) return;
+    BackupRestoreHook.exportInternalBackup((Context) chain.getThisObject(), destination);
   }
 
   private void prepareRestoreDb(Context ctx, Uri dbUri) {
@@ -1367,7 +1378,26 @@ public class SettingsUIInjector implements BaseHook {
           ModuleStrings.OPT_BACKUP_DESC,
           true,
           null,
-          v -> BackupRestoreHook.runBackup(ctx));
+          v ->
+              BackupRestoreHook.runBackup(
+                  ctx,
+                  () -> {
+                    Activity host = resolveActivity(ctx);
+                    if (host == null) {
+                      Toast.makeText(ctx, "内部バックアップは完了しましたが、保存画面を開けませんでした。", Toast.LENGTH_LONG)
+                          .show();
+                      return;
+                    }
+                    String stamp =
+                        new java.text.SimpleDateFormat(
+                                "yyyyMMdd-HHmmss", java.util.Locale.getDefault())
+                            .format(new java.util.Date());
+                    Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    intent.setType("application/octet-stream");
+                    intent.putExtra(Intent.EXTRA_TITLE, "Tencha-talk-" + stamp + ".tenchabak");
+                    host.startActivityForResult(intent, EXPORT_CHAT_BACKUP_CODE);
+                  }));
     } catch (Throwable ignored) {
     }
   }

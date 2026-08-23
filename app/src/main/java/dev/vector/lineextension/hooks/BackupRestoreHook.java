@@ -43,6 +43,10 @@ public final class BackupRestoreHook {
   private static final int COPY_BUFFER_SIZE = 64 * 1024;
 
   public static void runBackup(Context context) {
+    runBackup(context, null);
+  }
+
+  public static void runBackup(Context context, Runnable onSuccess) {
     final ProgressDialog pd = createSyncProgress(context, ModuleStrings.RESTORE_PREPARING);
     pd.show();
     LineTheme.applyDialogColors(pd, context);
@@ -53,8 +57,43 @@ public final class BackupRestoreHook {
           uiHandler.post(
               () -> {
                 pd.dismiss();
+                if (!result || onSuccess == null) {
+                  notifySyncResult(
+                      context, result, ModuleStrings.BACKUP_SUCCESS, ModuleStrings.BACKUP_ERROR);
+                }
+                if (result && onSuccess != null) onSuccess.run();
+              });
+        });
+  }
+
+  public static void exportInternalBackup(Context context, Uri destination) {
+    final ProgressDialog pd = createSyncProgress(context, ModuleStrings.BACKUP_EXPORTING);
+    pd.show();
+    LineTheme.applyDialogColors(pd, context);
+
+    syncExecutor.execute(
+        () -> {
+          boolean result = false;
+          try (InputStream in =
+                  context
+                      .getContentResolver()
+                      .openInputStream(ControlClient.storeUri(ControlProvider.LINE_BACKUP_FILE));
+              OutputStream out = context.getContentResolver().openOutputStream(destination, "wt")) {
+            if (in == null || out == null) throw new IOException("Cannot open backup destination");
+            copyStream(in, out);
+            result = true;
+          } catch (Exception e) {
+            Log.e(LOG_TAG, "Backup export failed: " + e.getMessage());
+          }
+          final boolean finalResult = result;
+          uiHandler.post(
+              () -> {
+                pd.dismiss();
                 notifySyncResult(
-                    context, result, ModuleStrings.BACKUP_SUCCESS, ModuleStrings.BACKUP_ERROR);
+                    context,
+                    finalResult,
+                    ModuleStrings.BACKUP_EXPORT_SUCCESS,
+                    ModuleStrings.BACKUP_EXPORT_ERROR);
               });
         });
   }

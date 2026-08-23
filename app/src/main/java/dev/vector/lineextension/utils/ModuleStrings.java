@@ -59,6 +59,9 @@ public class ModuleStrings {
 
   public static final String BACKUP_SUCCESS = "バックアップが完了しました。";
   public static final String BACKUP_ERROR = "バックアップに失敗しました。";
+  public static final String BACKUP_EXPORTING = "バックアップを書き出しています...";
+  public static final String BACKUP_EXPORT_SUCCESS = "バックアップを書き出しました。";
+  public static final String BACKUP_EXPORT_ERROR = "バックアップの書き出しに失敗しました。";
   public static final String RESTORE_SUCCESS = "復元が完了しました。";
   public static final String RESTORE_ERROR = "復元の実行中にエラーが発生しました。";
   public static final String RESTORE_CONFIRM_TITLE = "復元の確認";
@@ -266,7 +269,7 @@ public class ModuleStrings {
   public static final String DESC_PATH_ROW = "モジュールの設定ファイルなどが保存されるディレクトリを選択します。";
   public static final String DESC_RESET_ROW = "すべてのモジュール設定をデフォルト状態に戻します。";
   public static final String OPT_BACKUP_LABEL = "トーク履歴のバックアップ";
-  public static final String OPT_BACKUP_DESC = "現在のトーク履歴をTencha内部に安全に保存します。";
+  public static final String OPT_BACKUP_DESC = "Tencha内部へ保存後、そのまま端末やGoogle Driveへ書き出します。";
   public static final String OPT_RESTORE_LABEL = "トーク履歴の復元";
   public static final String OPT_RESTORE_DESC = "Tencha内部の最新バックアップから復元します。現在の履歴が上書きされます。";
 

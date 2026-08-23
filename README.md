@@ -24,7 +24,7 @@ root版APKと非root版LSPatchセットは[GitHub Releases](https://github.com/y
 
 ### Root端末
 
-1. Releasesから`Tencha-root-1.5.8.apk`をインストールします。
+1. Releasesから`Tencha-root-1.5.9.apk`をインストールします。
 2. Vectorで「Tencha」を有効化します。
 3. スコープはLINE (`jp.naver.line.android`) だけにします。
 4. モジュールAPKを開き、「機能設定」から必要な機能をONにします。
@@ -45,6 +45,7 @@ LINE設定内にも拡張設定への入口を追加します。カスタムフ�
 - 設定・既読履歴・取消履歴・編集履歴をTenchaの非公開内部領域へ保存
 - 任意の端末フォルダ／Google Driveへのバックアップ書き出しと復元
 - LINE内で作成したトーク履歴スナップショットをTencha内部へ保存し、Tenchaバックアップへ同梱
+- LINE内のバックアップ操作から端末フォルダ／Google Driveへ直接書き出し
 - 送信取消イベント保持、取消表示、取消時間制限延長
 - メッセージ時刻の秒表示、既定ブラウザ起動
 - 高品質画像、長時間動画のクライアント制限緩和
