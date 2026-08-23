@@ -125,6 +125,35 @@ private const val UPDATE_CHECK_INTERVAL_MS = 24L * 60L * 60L * 1000L
 
 private data class FeatureRow(val id: String, val title: String, val fallback: String)
 
+private sealed interface FeatureListEntry {
+  val stableKey: String
+
+  data class CategoryHeader(val category: VectorConfig.Category) : FeatureListEntry {
+    override val stableKey = "category-${category.name}"
+  }
+
+  data class Option(val item: VectorConfig.Item) : FeatureListEntry {
+    override val stableKey = "option-${item.key}"
+  }
+}
+
+internal fun matchesFeatureFilter(
+  label: String,
+  description: String,
+  query: String,
+  enabled: Boolean,
+  experimental: Boolean,
+  enabledOnly: Boolean,
+  experimentalOnly: Boolean,
+): Boolean {
+  val normalizedQuery = query.trim()
+  val matchesQuery =
+    normalizedQuery.isEmpty() ||
+      label.contains(normalizedQuery, ignoreCase = true) ||
+      description.contains(normalizedQuery, ignoreCase = true)
+  return matchesQuery && (!experimentalOnly || experimental) && (!enabledOnly || enabled)
+}
+
 private val visibleFeatures =
   listOf(
     FeatureRow("read_block", "既読", "無効"),
@@ -391,17 +420,29 @@ private fun SettingsScreen(
   fun isEnabled(option: VectorConfig.Item): Boolean =
     if (boolKeys.contains(option.key)) settings.getBoolean("bool.${option.key}", option.enabled) else option.enabled
 
-  val categoryItems = VectorConfig.Category.entries.associateWith { category ->
-    config.items.filter { option ->
-      val developerVisible = category != VectorConfig.Category.DEVELOPER || option.key == "developer_mode" || developerModeEnabled
-      val matchesQuery = searchQuery.isBlank() || option.label.contains(searchQuery.trim(), ignoreCase = true) || option.description.contains(searchQuery.trim(), ignoreCase = true)
-      developerVisible &&
-        matchesQuery &&
-        (!enabledOnly || isEnabled(option)) &&
-        (!experimentalOnly || experimentalKeys.contains(option.key))
+  val featureListEntries = buildList {
+    VectorConfig.Category.entries.forEach { category ->
+      val options = config.items.filter { option ->
+        val developerVisible = category != VectorConfig.Category.DEVELOPER || option.key == "developer_mode" || developerModeEnabled
+        option.category == category &&
+          developerVisible &&
+          matchesFeatureFilter(
+            label = option.label,
+            description = option.description,
+            query = searchQuery,
+            enabled = isEnabled(option),
+            experimental = experimentalKeys.contains(option.key),
+            enabledOnly = enabledOnly,
+            experimentalOnly = experimentalOnly,
+          )
+      }
+      if (options.isNotEmpty()) {
+        add(FeatureListEntry.CategoryHeader(category))
+        options.forEach { add(FeatureListEntry.Option(it)) }
+      }
     }
   }
-  val visibleOptionCount = categoryItems.values.sumOf { it.size }
+  val visibleOptionCount = featureListEntries.count { it is FeatureListEntry.Option }
 
   val createBackup =
     rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
@@ -558,11 +599,11 @@ private fun SettingsScreen(
           }
         }
       }
-      VectorConfig.Category.entries.forEach { category ->
-        val itemsInCategory = categoryItems.getValue(category)
-        if (itemsInCategory.isNotEmpty()) {
-          item { SectionTitle(category.label) }
-          items(itemsInCategory, key = { it.key }) { option ->
+      items(featureListEntries, key = { it.stableKey }) { entry ->
+        when (entry) {
+          is FeatureListEntry.CategoryHeader -> SectionTitle(entry.category.label)
+          is FeatureListEntry.Option -> {
+            val option = entry.item
             val checked = isEnabled(option)
             val dependencyEnabled = option.disabledWhenEnabledKey?.let { dependency ->
               val defaultValue = config.items.firstOrNull { it.key == dependency }?.enabled ?: false
