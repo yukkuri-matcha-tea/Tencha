@@ -32,11 +32,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,6 +49,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -58,6 +62,7 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -73,6 +78,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.edit
 import dev.vector.lineextension.core.ControlClient
 import dev.vector.lineextension.core.FeatureStatus
 import dev.vector.lineextension.core.GitHubUpdater
@@ -109,6 +115,13 @@ private fun VectorTheme(content: @Composable () -> Unit) {
 }
 
 private enum class Screen { HOME, SETTINGS, DIAGNOSTICS, ABOUT, ROOTLESS }
+
+private const val UPDATE_CHECK_PREFS = "tencha_update_check"
+private const val UPDATE_LAST_CHECKED_AT = "last_checked_at"
+private const val UPDATE_CHECKED_APP_VERSION = "checked_app_version"
+private const val UPDATE_AVAILABLE = "update_available"
+private const val UPDATE_AVAILABLE_VERSION = "available_version"
+private const val UPDATE_CHECK_INTERVAL_MS = 24L * 60L * 60L * 1000L
 
 private data class FeatureRow(val id: String, val title: String, val fallback: String)
 
@@ -149,6 +162,45 @@ private fun VectorApp() {
   var screen by remember { mutableStateOf(Screen.HOME) }
   var snapshot by remember { mutableStateOf(ControlClient.snapshot(context)) }
   var settings by remember { mutableStateOf(ControlClient.settingsSnapshot(context)) }
+  val updatePrefs = remember { context.getSharedPreferences(UPDATE_CHECK_PREFS, android.content.Context.MODE_PRIVATE) }
+  var updateAvailable by remember {
+    mutableStateOf(
+      updatePrefs.getString(UPDATE_CHECKED_APP_VERSION, null) == BuildConfig.VERSION_NAME &&
+        updatePrefs.getBoolean(UPDATE_AVAILABLE, false),
+    )
+  }
+
+  fun recordUpdateResult(available: Boolean, version: String?) {
+    updateAvailable = available
+    updatePrefs.edit {
+      putLong(UPDATE_LAST_CHECKED_AT, System.currentTimeMillis())
+      putString(UPDATE_CHECKED_APP_VERSION, BuildConfig.VERSION_NAME)
+      putBoolean(UPDATE_AVAILABLE, available)
+      putString(UPDATE_AVAILABLE_VERSION, version)
+    }
+  }
+
+  LaunchedEffect(Unit) {
+    val now = System.currentTimeMillis()
+    val lastCheckedAt = updatePrefs.getLong(UPDATE_LAST_CHECKED_AT, 0L)
+    val checkedAppVersion = updatePrefs.getString(UPDATE_CHECKED_APP_VERSION, null)
+    val checkDue =
+      checkedAppVersion != BuildConfig.VERSION_NAME ||
+        lastCheckedAt <= 0L ||
+        now - lastCheckedAt >= UPDATE_CHECK_INTERVAL_MS
+    if (checkDue) {
+      updatePrefs.edit {
+        putLong(UPDATE_LAST_CHECKED_AT, now)
+        putString(UPDATE_CHECKED_APP_VERSION, BuildConfig.VERSION_NAME)
+        if (checkedAppVersion != BuildConfig.VERSION_NAME) {
+          putBoolean(UPDATE_AVAILABLE, false)
+          remove(UPDATE_AVAILABLE_VERSION)
+        }
+      }
+      runCatching { withContext(Dispatchers.IO) { GitHubUpdater.checkLatest() } }
+        .onSuccess { latest -> recordUpdateResult(latest.isNewerThanCurrent, latest.version) }
+    }
+  }
 
   fun refresh() {
     snapshot = ControlClient.snapshot(context)
@@ -157,10 +209,10 @@ private fun VectorApp() {
 
   key(screen) {
     when (screen) {
-      Screen.HOME -> DashboardScreen(snapshot, ::refresh, { screen = it; refresh() }, snackbar)
-      Screen.SETTINGS -> SettingsScreen(settings, { settings = ControlClient.settingsSnapshot(context) }, { screen = it; refresh() }, snackbar)
-      Screen.DIAGNOSTICS -> DiagnosticsScreen(snapshot, ::refresh, { screen = it; refresh() }, snackbar)
-      Screen.ABOUT -> AboutScreen({ screen = it }, snackbar)
+      Screen.HOME -> DashboardScreen(snapshot, ::refresh, { screen = it; refresh() }, snackbar, updateAvailable)
+      Screen.SETTINGS -> SettingsScreen(settings, { settings = ControlClient.settingsSnapshot(context) }, { screen = it; refresh() }, snackbar, updateAvailable)
+      Screen.DIAGNOSTICS -> DiagnosticsScreen(snapshot, ::refresh, { screen = it; refresh() }, snackbar, updateAvailable)
+      Screen.ABOUT -> AboutScreen({ screen = it }, snackbar, updateAvailable, ::recordUpdateResult)
       Screen.ROOTLESS -> RootlessSetupScreen({ screen = Screen.ABOUT }, snackbar)
     }
   }
@@ -173,6 +225,7 @@ private fun DashboardScreen(
   onRefresh: () -> Unit,
   onNavigate: (Screen) -> Unit,
   snackbar: SnackbarHostState,
+  updateAvailable: Boolean,
 ) {
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
@@ -194,7 +247,7 @@ private fun DashboardScreen(
         actions = { TextButton(onClick = onRefresh) { Text("更新") } },
       )
     },
-    bottomBar = { TenchaNavigationBar(Screen.HOME, onNavigate) },
+    bottomBar = { TenchaNavigationBar(Screen.HOME, onNavigate, updateAvailable) },
     snackbarHost = { SnackbarHost(snackbar) },
   ) { inner ->
     LazyColumn(
@@ -320,6 +373,7 @@ private fun SettingsScreen(
   onSettingsChanged: () -> Unit,
   onNavigate: (Screen) -> Unit,
   snackbar: SnackbarHostState,
+  updateAvailable: Boolean,
 ) {
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
@@ -330,6 +384,24 @@ private fun SettingsScreen(
   var showResetDialog by remember { mutableStateOf(false) }
   var showBlockedChatsDialog by remember { mutableStateOf(false) }
   var showRestoreDialog by remember { mutableStateOf(false) }
+  var searchQuery by remember { mutableStateOf("") }
+  var enabledOnly by remember { mutableStateOf(false) }
+  var experimentalOnly by remember { mutableStateOf(false) }
+
+  fun isEnabled(option: VectorConfig.Item): Boolean =
+    if (boolKeys.contains(option.key)) settings.getBoolean("bool.${option.key}", option.enabled) else option.enabled
+
+  val categoryItems = VectorConfig.Category.entries.associateWith { category ->
+    config.items.filter { option ->
+      val developerVisible = category != VectorConfig.Category.DEVELOPER || option.key == "developer_mode" || developerModeEnabled
+      val matchesQuery = searchQuery.isBlank() || option.label.contains(searchQuery.trim(), ignoreCase = true) || option.description.contains(searchQuery.trim(), ignoreCase = true)
+      developerVisible &&
+        matchesQuery &&
+        (!enabledOnly || isEnabled(option)) &&
+        (!experimentalOnly || experimentalKeys.contains(option.key))
+    }
+  }
+  val visibleOptionCount = categoryItems.values.sumOf { it.size }
 
   val createBackup =
     rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
@@ -426,7 +498,7 @@ private fun SettingsScreen(
         actions = { TextButton(onClick = { showResetDialog = true }) { Text("初期化") } },
       )
     },
-    bottomBar = { TenchaNavigationBar(Screen.SETTINGS, onNavigate) },
+    bottomBar = { TenchaNavigationBar(Screen.SETTINGS, onNavigate, updateAvailable) },
     snackbarHost = { SnackbarHost(snackbar) },
   ) { inner ->
     LazyColumn(
@@ -434,6 +506,30 @@ private fun SettingsScreen(
       contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
       verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+      item {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("機能を検索") },
+            placeholder = { Text("名前または説明") },
+            singleLine = true,
+          )
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+              selected = enabledOnly,
+              onClick = { enabledOnly = !enabledOnly },
+              label = { Text("有効のみ") },
+            )
+            FilterChip(
+              selected = experimentalOnly,
+              onClick = { experimentalOnly = !experimentalOnly },
+              label = { Text("実験的のみ") },
+            )
+          }
+        }
+      }
       item {
         Card {
           ListItem(
@@ -463,14 +559,11 @@ private fun SettingsScreen(
         }
       }
       VectorConfig.Category.entries.forEach { category ->
-        val categoryItems = config.items.filter {
-          it.category == category &&
-            (category != VectorConfig.Category.DEVELOPER || it.key == "developer_mode" || developerModeEnabled)
-        }
-        if (categoryItems.isNotEmpty()) {
+        val itemsInCategory = categoryItems.getValue(category)
+        if (itemsInCategory.isNotEmpty()) {
           item { SectionTitle(category.label) }
-          items(categoryItems, key = { it.key }) { option ->
-            val checked = if (boolKeys.contains(option.key)) settings.getBoolean("bool.${option.key}", option.enabled) else option.enabled
+          items(itemsInCategory, key = { it.key }) { option ->
+            val checked = isEnabled(option)
             val dependencyEnabled = option.disabledWhenEnabledKey?.let { dependency ->
               val defaultValue = config.items.firstOrNull { it.key == dependency }?.enabled ?: false
               !(if (boolKeys.contains(dependency)) settings.getBoolean("bool.$dependency", defaultValue) else defaultValue)
@@ -503,6 +596,16 @@ private fun SettingsScreen(
           }
         }
       }
+      if (visibleOptionCount == 0) {
+        item {
+          Text(
+            "一致する機能がありません",
+            modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
+      }
       item { Spacer(Modifier.height(12.dp)) }
     }
   }
@@ -515,13 +618,14 @@ private fun DiagnosticsScreen(
   onRefresh: () -> Unit,
   onNavigate: (Screen) -> Unit,
   snackbar: SnackbarHostState,
+  updateAvailable: Boolean,
 ) {
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   val ids = snapshot.getStringArrayList("featureIds").orEmpty().sorted()
   Scaffold(
     topBar = { TopAppBar(title = { Text("診断・復旧") }, actions = { TextButton(onClick = onRefresh) { Text("更新") } }) },
-    bottomBar = { TenchaNavigationBar(Screen.DIAGNOSTICS, onNavigate) },
+    bottomBar = { TenchaNavigationBar(Screen.DIAGNOSTICS, onNavigate, updateAvailable) },
     snackbarHost = { SnackbarHost(snackbar) },
   ) { inner ->
     LazyColumn(
@@ -567,7 +671,12 @@ private fun DiagnosticsScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AboutScreen(onNavigate: (Screen) -> Unit, snackbar: SnackbarHostState) {
+private fun AboutScreen(
+  onNavigate: (Screen) -> Unit,
+  snackbar: SnackbarHostState,
+  updateAvailable: Boolean,
+  onUpdateResult: (Boolean, String?) -> Unit,
+) {
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   var downloadedApk by remember { mutableStateOf<java.io.File?>(null) }
@@ -596,7 +705,7 @@ private fun AboutScreen(onNavigate: (Screen) -> Unit, snackbar: SnackbarHostStat
     }
   Scaffold(
     topBar = { TopAppBar(title = { Text("Tenchaについて") }) },
-    bottomBar = { TenchaNavigationBar(Screen.ABOUT, onNavigate) },
+    bottomBar = { TenchaNavigationBar(Screen.ABOUT, onNavigate, updateAvailable) },
     snackbarHost = { SnackbarHost(snackbar) },
   ) { inner ->
     LazyColumn(
@@ -653,6 +762,7 @@ private fun AboutScreen(onNavigate: (Screen) -> Unit, snackbar: SnackbarHostStat
                 scope.launch {
                   try {
                     val available = withContext(Dispatchers.IO) { GitHubUpdater.checkLatest() }
+                    onUpdateResult(available.isNewerThanCurrent, available.version)
                     if (!available.isNewerThanCurrent) {
                       updateStatus = "最新版です（v${BuildConfig.VERSION_NAME}）"
                       return@launch
@@ -838,12 +948,12 @@ private fun SetupStep(number: String, title: String, description: String) {
 }
 
 @Composable
-private fun TenchaNavigationBar(selected: Screen, onNavigate: (Screen) -> Unit) {
+private fun TenchaNavigationBar(selected: Screen, onNavigate: (Screen) -> Unit, updateAvailable: Boolean) {
   NavigationBar {
     NavigationItem(Screen.HOME, "ホーム", R.drawable.ic_nav_home, selected, onNavigate)
     NavigationItem(Screen.SETTINGS, "機能", R.drawable.ic_nav_tune, selected, onNavigate)
     NavigationItem(Screen.DIAGNOSTICS, "診断", R.drawable.ic_nav_health, selected, onNavigate)
-    NavigationItem(Screen.ABOUT, "情報", R.drawable.ic_nav_info, selected, onNavigate)
+    NavigationItem(Screen.ABOUT, "情報", R.drawable.ic_nav_info, selected, onNavigate, updateAvailable)
   }
 }
 
@@ -854,11 +964,16 @@ private fun RowScope.NavigationItem(
   icon: Int,
   selected: Screen,
   onNavigate: (Screen) -> Unit,
+  showBadge: Boolean = false,
 ) {
   NavigationBarItem(
     selected = selected == screen,
     onClick = { if (selected != screen) onNavigate(screen) },
-    icon = { Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(24.dp)) },
+    icon = {
+      BadgedBox(badge = { if (showBadge) Badge() }) {
+        Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(24.dp))
+      }
+    },
     label = { Text(label) },
   )
 }
