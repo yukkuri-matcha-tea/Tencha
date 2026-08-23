@@ -953,9 +953,9 @@ private fun AboutScreen(
         Card {
           Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("yukkuri-matcha-tea", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            SocialLinkButton("GitHub", "github.com/yukkuri-matcha-tea") { openUrl(context, "https://github.com/yukkuri-matcha-tea") }
-            SocialLinkButton("X", "@yukkuri_matcha_") { openUrl(context, "https://x.com/yukkuri_matcha_") }
-            SocialLinkButton("YouTube", "ゆっくり抹茶ティー") { openUrl(context, "https://www.youtube.com/channel/UCuhltKmciQLwQTBEIIiCH2g") }
+            SocialLinkButton("GitHub", "github.com/yukkuri-matcha-tea", R.drawable.ic_social_github) { openUrl(context, "https://github.com/yukkuri-matcha-tea") }
+            SocialLinkButton("X", "@yukkuri_matcha_", R.drawable.ic_social_x) { openUrl(context, "https://x.com/yukkuri_matcha_") }
+            SocialLinkButton("YouTube", "ゆっくり抹茶ティー", R.drawable.ic_social_youtube) { openUrl(context, "https://www.youtube.com/channel/UCuhltKmciQLwQTBEIIiCH2g") }
           }
         }
       }
@@ -1147,9 +1147,15 @@ private fun StatusDot(status: String) {
 }
 
 @Composable
-private fun SocialLinkButton(title: String, subtitle: String, onClick: () -> Unit) {
+private fun SocialLinkButton(title: String, subtitle: String, iconRes: Int, onClick: () -> Unit) {
   OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+      Icon(
+        painter = painterResource(iconRes),
+        contentDescription = null,
+        modifier = Modifier.size(22.dp),
+        tint = MaterialTheme.colorScheme.onSurface,
+      )
       Text(title, fontWeight = FontWeight.SemiBold)
       Text(subtitle, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
