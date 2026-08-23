@@ -10,10 +10,12 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +39,7 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -53,6 +56,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -128,7 +132,7 @@ private data class FeatureRow(val id: String, val title: String, val fallback: S
 private sealed interface FeatureListEntry {
   val stableKey: String
 
-  data class CategoryHeader(val category: VectorConfig.Category) : FeatureListEntry {
+  data class CategoryHeader(val category: VectorConfig.Category, val count: Int) : FeatureListEntry {
     override val stableKey = "category-${category.name}"
   }
 
@@ -437,7 +441,7 @@ private fun SettingsScreen(
           )
       }
       if (options.isNotEmpty()) {
-        add(FeatureListEntry.CategoryHeader(category))
+        add(FeatureListEntry.CategoryHeader(category, options.size))
         options.forEach { add(FeatureListEntry.Option(it)) }
       }
     }
@@ -548,26 +552,56 @@ private fun SettingsScreen(
       verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
       item {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("機能を検索") },
-            placeholder = { Text("名前または説明") },
-            singleLine = true,
-          )
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-              selected = enabledOnly,
-              onClick = { enabledOnly = !enabledOnly },
-              label = { Text("有効のみ") },
+        ElevatedCard {
+          Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+          ) {
+            Text("機能を探す", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            OutlinedTextField(
+              value = searchQuery,
+              onValueChange = { searchQuery = it },
+              modifier = Modifier.fillMaxWidth(),
+              label = { Text("検索") },
+              placeholder = { Text("機能名または説明") },
+              singleLine = true,
             )
-            FilterChip(
-              selected = experimentalOnly,
-              onClick = { experimentalOnly = !experimentalOnly },
-              label = { Text("実験的のみ") },
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              FilterChip(
+                selected = enabledOnly,
+                onClick = { enabledOnly = !enabledOnly },
+                label = { Text("有効のみ") },
+              )
+              FilterChip(
+                selected = experimentalOnly,
+                onClick = { experimentalOnly = !experimentalOnly },
+                label = { Text("実験的のみ") },
+              )
+            }
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              AnimatedContent(
+                targetState = visibleOptionCount,
+                transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(100)) },
+                label = "Feature result count",
+              ) { count ->
+                Text("$count 件", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              }
+              AnimatedVisibility(
+                visible = searchQuery.isNotBlank() || enabledOnly || experimentalOnly,
+                enter = fadeIn(tween(160)),
+                exit = fadeOut(tween(100)),
+              ) {
+                TextButton(onClick = {
+                  searchQuery = ""
+                  enabledOnly = false
+                  experimentalOnly = false
+                }) { Text("絞り込みを解除") }
+              }
+            }
           }
         }
       }
@@ -601,7 +635,7 @@ private fun SettingsScreen(
       }
       items(featureListEntries, key = { it.stableKey }) { entry ->
         when (entry) {
-          is FeatureListEntry.CategoryHeader -> SectionTitle(entry.category.label)
+          is FeatureListEntry.CategoryHeader -> SectionTitle(entry.category.label, entry.count)
           is FeatureListEntry.Option -> {
             val option = entry.item
             val checked = isEnabled(option)
@@ -610,41 +644,64 @@ private fun SettingsScreen(
               !(if (boolKeys.contains(dependency)) settings.getBoolean("bool.$dependency", defaultValue) else defaultValue)
             } ?: true
             val experimental = experimentalKeys.contains(option.key)
-            ListItem(
-              headlineContent = { Text(option.label) },
-              supportingContent = {
-                Column {
-                  if (option.description.isNotBlank()) Text(option.description)
-                  if (experimental) Text("実験的", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium)
-                  if (option.key == "custom_font_path") Text("フォント選択はLINE内の拡張設定から行います")
-                  if (option.key == "home_tab_type") Text("ホーム種別の選択はLINE内の拡張設定から行います")
-                  if (option.key == "fcm_fix_mode") Text("FCM方式の選択はLINE内の拡張設定から行います")
-                }
-              },
-              trailingContent = {
-                if (option.key != "custom_font_path" && option.key != "home_tab_type" && option.key != "fcm_fix_mode") {
-                  Switch(
-                    checked = checked, enabled = dependencyEnabled,
-                    onCheckedChange = { enabled ->
-                      val ok = ControlClient.putSetting(context, option.key, enabled)
-                      if (ok) onSettingsChanged()
-                      scope.launch { snackbar.showSnackbar(if (ok) if (restartRequiredKeys.contains(option.key)) "保存しました。LINE再起動後に反映します" else "保存しました" else "保存に失敗しました") }
-                    },
-                  )
-                }
-              },
+            val containerColor by animateColorAsState(
+              targetValue = if (checked) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f) else MaterialTheme.colorScheme.surfaceContainerLow,
+              animationSpec = tween(220),
+              label = "Feature card color",
             )
+            Card(colors = CardDefaults.cardColors(containerColor = containerColor)) {
+              ListItem(
+                colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = Color.Transparent),
+                headlineContent = { Text(option.label, fontWeight = FontWeight.Medium) },
+                supportingContent = {
+                  Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (option.description.isNotBlank()) Text(option.description)
+                    if (experimental) {
+                      Badge(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                      ) {
+                        Text("実験的", modifier = Modifier.padding(horizontal = 4.dp))
+                      }
+                    }
+                    if (option.key == "custom_font_path") Text("フォント選択はLINE内の拡張設定から行います")
+                    if (option.key == "home_tab_type") Text("ホーム種別の選択はLINE内の拡張設定から行います")
+                    if (option.key == "fcm_fix_mode") Text("FCM方式の選択はLINE内の拡張設定から行います")
+                  }
+                },
+                trailingContent = {
+                  if (option.key != "custom_font_path" && option.key != "home_tab_type" && option.key != "fcm_fix_mode") {
+                    Switch(
+                      checked = checked, enabled = dependencyEnabled,
+                      onCheckedChange = { enabled ->
+                        val ok = ControlClient.putSetting(context, option.key, enabled)
+                        if (ok) onSettingsChanged()
+                        scope.launch { snackbar.showSnackbar(if (ok) if (restartRequiredKeys.contains(option.key)) "保存しました。LINE再起動後に反映します" else "保存しました" else "保存に失敗しました") }
+                      },
+                    )
+                  }
+                },
+              )
+            }
           }
         }
       }
-      if (visibleOptionCount == 0) {
-        item {
-          Text(
-            "一致する機能がありません",
-            modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
+      item(key = "empty-feature-state") {
+        AnimatedVisibility(
+          visible = visibleOptionCount == 0,
+          enter = fadeIn(tween(160)),
+          exit = fadeOut(tween(100)),
+        ) {
+          Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+            Column(
+              modifier = Modifier.fillMaxWidth().padding(24.dp),
+              horizontalAlignment = Alignment.CenterHorizontally,
+              verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+              Text("一致する機能がありません", style = MaterialTheme.typography.titleMedium)
+              Text("検索語や絞り込みを変更してください", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+          }
         }
       }
       item { Spacer(Modifier.height(12.dp)) }
@@ -1011,12 +1068,25 @@ private fun RowScope.NavigationItem(
     selected = selected == screen,
     onClick = { if (selected != screen) onNavigate(screen) },
     icon = {
-      BadgedBox(badge = { if (showBadge) Badge() }) {
+      BadgedBox(
+        badge = {
+          AnimatedUpdateBadge(showBadge)
+        },
+      ) {
         Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(24.dp))
       }
     },
     label = { Text(label) },
   )
+}
+
+@Composable
+private fun AnimatedUpdateBadge(visible: Boolean) {
+  AnimatedVisibility(
+    visible = visible,
+    enter = fadeIn(tween(160)),
+    exit = fadeOut(tween(100)),
+  ) { Badge() }
 }
 
 @Composable
@@ -1041,17 +1111,38 @@ private fun SocialLinkButton(title: String, subtitle: String, onClick: () -> Uni
 }
 
 @Composable
-private fun SectionTitle(text: String) {
-  Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+private fun SectionTitle(text: String, count: Int? = null) {
+  Row(
+    modifier = Modifier.fillMaxWidth(),
+    horizontalArrangement = Arrangement.SpaceBetween,
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    if (count != null) {
+      Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+      ) {
+        Text(
+          count.toString(),
+          modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+          style = MaterialTheme.typography.labelMedium,
+          fontWeight = FontWeight.SemiBold,
+        )
+      }
+    }
+  }
 }
 
 @Composable
 private fun StatusText(text: String) {
-  val color = when (text) {
+  val targetColor = when (text) {
     "動作中", "接続済み" -> MaterialTheme.colorScheme.primary
     "Hook失敗", "Safe Mode", "未接続" -> MaterialTheme.colorScheme.error
     else -> MaterialTheme.colorScheme.onSurfaceVariant
   }
+  val color by animateColorAsState(targetColor, animationSpec = tween(220), label = "Status text color")
   Text(text, style = MaterialTheme.typography.labelLarge, color = color)
 }
 
