@@ -10,15 +10,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -64,6 +59,7 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -159,16 +155,8 @@ private fun VectorApp() {
     settings = ControlClient.settingsSnapshot(context)
   }
 
-  AnimatedContent(
-    targetState = screen,
-    transitionSpec = {
-      val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
-      (slideInHorizontally(animationSpec = tween(240)) { direction * it / 8 } + fadeIn(tween(180)))
-        .togetherWith(slideOutHorizontally(animationSpec = tween(200)) { -direction * it / 8 } + fadeOut(tween(140)))
-    },
-    label = "Tencha screen",
-  ) { currentScreen ->
-    when (currentScreen) {
+  key(screen) {
+    when (screen) {
       Screen.HOME -> DashboardScreen(snapshot, ::refresh, { screen = it; refresh() }, snackbar)
       Screen.SETTINGS -> SettingsScreen(settings, { settings = ControlClient.settingsSnapshot(context) }, { screen = it; refresh() }, snackbar)
       Screen.DIAGNOSTICS -> DiagnosticsScreen(snapshot, ::refresh, { screen = it; refresh() }, snackbar)
@@ -867,15 +855,10 @@ private fun RowScope.NavigationItem(
   selected: Screen,
   onNavigate: (Screen) -> Unit,
 ) {
-  val iconSize by animateDpAsState(
-    targetValue = if (selected == screen) 26.dp else 24.dp,
-    animationSpec = tween(200),
-    label = "$label icon",
-  )
   NavigationBarItem(
     selected = selected == screen,
     onClick = { if (selected != screen) onNavigate(screen) },
-    icon = { Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(iconSize)) },
+    icon = { Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(24.dp)) },
     label = { Text(label) },
   )
 }
