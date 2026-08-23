@@ -24,7 +24,7 @@ root版APKと非root版LSPatchセットは[GitHub Releases](https://github.com/y
 
 ### Root端末
 
-1. Releasesから`Tencha-root-1.5.22.apk`をインストールします。
+1. Releasesから`Tencha-root-1.5.23.apk`をインストールします。
 2. Vectorで「Tencha」を有効化します。
 3. スコープはLINE (`jp.naver.line.android`) だけにします。
 4. モジュールAPKを開き、「機能設定」から必要な機能をONにします。
