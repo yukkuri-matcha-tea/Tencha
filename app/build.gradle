@@ -8,6 +8,19 @@ android {
     namespace 'dev.vector.lineextension'
     compileSdk 37
 
+    def ciKeystorePath = System.getenv('TENCHA_KEYSTORE_PATH')
+
+    signingConfigs {
+        ci {
+            if (ciKeystorePath) {
+                storeFile file(ciKeystorePath)
+                storePassword System.getenv('TENCHA_STORE_PASSWORD')
+                keyAlias System.getenv('TENCHA_KEY_ALIAS')
+                keyPassword System.getenv('TENCHA_KEY_PASSWORD')
+            }
+        }
+    }
+
     defaultConfig {
         applicationId 'dev.vector.lineextension'
         minSdk 26
@@ -20,6 +33,9 @@ android {
     buildTypes {
         debug {
             minifyEnabled false
+            if (ciKeystorePath) {
+                signingConfig signingConfigs.ci
+            }
         }
         release {
             minifyEnabled false
