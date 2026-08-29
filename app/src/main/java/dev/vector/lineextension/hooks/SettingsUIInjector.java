@@ -43,13 +43,14 @@ import dev.vector.lineextension.utils.LineTheme;
 import dev.vector.lineextension.utils.ModuleStrings;
 import io.github.libxposed.api.XposedInterface;
 import java.io.File;
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
-import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 
 public class SettingsUIInjector implements BaseHook {
 
@@ -86,6 +87,9 @@ public class SettingsUIInjector implements BaseHook {
   private volatile FrameLayout cachedItemHost = null;
   private volatile View cachedNavHeader = null;
   private volatile View cachedSearchView = null;
+  private final Set<Object> injectedSectionItems =
+      Collections.newSetFromMap(new IdentityHashMap<>());
+  private final Set<Object> injectedRowItems = Collections.newSetFromMap(new IdentityHashMap<>());
 
   public static void openSettings(android.app.Activity activity) {
     SettingsUIInjector ui = instance;
@@ -113,8 +117,6 @@ public class SettingsUIInjector implements BaseHook {
   }
 
   private void hookSettingsItemInjection(LineVersion.Config cfg, LoadParam lpparam) {
-    final Class<?> proxyInterface =
-        Reflect.findClass(cfg.settings.settingsItemClass, lpparam.classLoader);
     final Class<?> searchHelperCls =
         Reflect.findClass(cfg.settings.settingsSearchHelperClass, lpparam.classLoader);
     Vector.module
@@ -124,7 +126,7 @@ public class SettingsUIInjector implements BaseHook {
                 lpparam.classLoader,
                 cfg.settings.methodSetItems,
                 Collection.class))
-        .intercept(chain -> injectVectorItems(chain, proxyInterface, searchHelperCls, lpparam));
+        .intercept(chain -> injectVectorItems(chain, searchHelperCls, lpparam));
   }
 
   private void hookViewHolderBinding(LineVersion.Config cfg, LoadParam lpparam) {
@@ -198,11 +200,7 @@ public class SettingsUIInjector implements BaseHook {
   }
 
   private Object injectVectorItems(
-      XposedInterface.Chain chain,
-      Class<?> proxyInterface,
-      Class<?> searchHelperCls,
-      LoadParam lpparam)
-      throws Throwable {
+      XposedInterface.Chain chain, Class<?> searchHelperCls, LoadParam lpparam) throws Throwable {
     LineVersion.Config c = LineVersion.get();
     Collection<?> sourceItems = (Collection<?>) chain.getArg(0);
     if (!isTargetSettingsAdapter(chain.getThisObject(), searchHelperCls)) {
@@ -211,163 +209,49 @@ public class SettingsUIInjector implements BaseHook {
     if (containsVectorItem(sourceItems, c)) return chain.proceed();
 
     List<Object> items = new ArrayList<>(sourceItems);
-    int insertPos = items.size();
-    findPosition:
+    int insertPos = -1;
+    Object headerTemplate = null;
+    Object rowTemplate = null;
     for (int i = 0; i < items.size(); i++) {
       try {
         Object model = Reflect.getObjectField(items.get(i), c.settings.fieldItemModel);
         if (model == null) continue;
-        for (java.lang.reflect.Field f : model.getClass().getDeclaredFields()) {
-          if (f.getType() == int.class) {
-            f.setAccessible(true);
-            if (f.getInt(model) == c.res.idPersonalInfo) {
-              insertPos = i;
-              break findPosition;
-            }
-          }
+        if (headerTemplate == null
+            && model.getClass().getName().equals(c.settings.settingsHeaderItemClass)
+            && hasIntFieldValue(model, c.res.idPersonalInfo)) {
+          insertPos = i;
+          headerTemplate = model;
+          continue;
+        }
+        if (headerTemplate != null
+            && model.getClass().getName().equals(c.settings.settingsRowItemClass)) {
+          rowTemplate = model;
+          break;
         }
       } catch (Throwable ignored) {
       }
     }
-    Object section;
-    Object row;
-    try {
-      if (!c.settings.settingsSuspendFunction2Class.isEmpty()) {
-        Object[] nativeItems = createNativeSettingsItems(c, lpparam.classLoader);
-        section = nativeItems[0];
-        row = nativeItems[1];
-      } else {
-        Object[] legacyItems = createLegacySettingsItems(c, lpparam.classLoader, proxyInterface);
-        section = legacyItems[0];
-        row = legacyItems[1];
-      }
-    } catch (Throwable e) {
-      Vector.log("Tencha: Settings model creation failed: " + e);
-      RuntimeReporter.partial("line_settings_ui", "LINE設定モデルの生成に失敗");
+    if (headerTemplate == null || rowTemplate == null || insertPos < 0) {
+      Vector.log("Tencha: Live LINE settings templates were not found");
+      RuntimeReporter.partial("line_settings_ui", "LINE設定の実物テンプレートを取得できませんでした");
       return chain.proceed();
     }
 
-    items.add(insertPos, section);
-    items.add(insertPos + 1, row);
-    return chain.proceed(new Object[] {items});
-  }
-
-  private static Object[] createNativeSettingsItems(LineVersion.Config c, ClassLoader cl)
-      throws Throwable {
-    Class<?> wrapperClass = Reflect.findClass(c.settings.settingsAdapterWrapperClass, cl);
-    Class<?> headerClass = Reflect.findClass(c.settings.settingsHeaderItemClass, cl);
-    Class<?> rowClass = Reflect.findClass(c.settings.settingsRowItemClass, cl);
-    Class<?> suspendFunction2 = Reflect.findClass(c.settings.settingsSuspendFunction2Class, cl);
-    Class<?> function1 = Reflect.findClass(c.settings.settingsFunction1Class, cl);
-    Class<?> iconProvider = Reflect.findClass(c.settings.settingsIconProviderClass, cl);
-    Class<?> navigation = Reflect.findClass(c.settings.settingsNavigationClass, cl);
-    Class<?> defaultNavigation = Reflect.findClass(c.settings.settingsDefaultNavigationClass, cl);
-
-    Object suspendTrue = createFunctionProxy(suspendFunction2, cl, Boolean.TRUE);
-    Object suspendNull = createFunctionProxy(suspendFunction2, cl, null);
-    Object functionNull = createFunctionProxy(function1, cl, null);
-    Object navigationValue =
-        Reflect.getStaticObjectField(defaultNavigation, c.settings.fieldDefaultNavigation);
-
-    Constructor<?> headerConstructor =
-        Reflect.findConstructorExact(
-            headerClass, int.class, boolean.class, boolean.class, suspendFunction2);
-    Object headerModel =
-        headerConstructor.newInstance(c.res.idPersonalInfo, true, false, suspendTrue);
-    Reflect.setObjectField(headerModel, c.settings.fieldModelTag, BRAND_TAG);
-
-    Constructor<?> rowConstructor =
-        Reflect.findConstructorExact(
-            rowClass,
-            String.class,
-            Integer.class,
-            int.class,
-            suspendFunction2,
-            suspendFunction2,
-            Integer.class,
-            suspendFunction2,
-            iconProvider,
-            function1,
-            function1,
-            navigation,
-            suspendFunction2,
-            boolean.class);
-    Object rowModel =
-        rowConstructor.newInstance(
-            BRAND_TAG,
-            null,
-            c.res.idPersonalInfo,
-            suspendNull,
-            suspendNull,
-            null,
-            suspendNull,
-            null,
-            functionNull,
-            functionNull,
-            navigationValue,
-            suspendTrue,
-            true);
-
-    return new Object[] {
-      Reflect.newInstance(wrapperClass, headerModel), Reflect.newInstance(wrapperClass, rowModel)
-    };
-  }
-
-  private static Object[] createLegacySettingsItems(
-      LineVersion.Config c, ClassLoader cl, Class<?> proxyInterface) {
-    Object section = createAdapterItemProxy(proxyInterface, cl, c.res.typeSection);
-    Object row = createAdapterItemProxy(proxyInterface, cl, c.res.typeRow);
-    Class<?> wrapperClass = Reflect.findClass(c.settings.settingsAdapterWrapperClass, cl);
-    Class<?> headerClass = Reflect.findClass(c.settings.settingsHeaderItemClass, cl);
-    Class<?> rowClass = Reflect.findClass(c.settings.settingsRowItemClass, cl);
-    Class<?> unsafeClass = Reflect.findClass("sun.misc.Unsafe", (ClassLoader) null);
-    Object unsafe = Reflect.getStaticObjectField(unsafeClass, "theUnsafe");
-    Object headerModel = Reflect.callMethod(unsafe, "allocateInstance", headerClass);
-    Object rowModel = Reflect.callMethod(unsafe, "allocateInstance", rowClass);
-    Reflect.setIntField(headerModel, c.settings.fieldLayoutId, c.res.typeSection);
-    Reflect.setIntField(rowModel, c.settings.fieldLayoutId, c.res.typeRow);
-    Reflect.setObjectField(headerModel, c.settings.fieldModelTag, BRAND_TAG);
-    Reflect.setObjectField(rowModel, c.settings.fieldModelTag, BRAND_TAG);
-    Reflect.setBooleanField(headerModel, c.settings.fieldIsVisible, true);
-    Class<?> handlerBase = Reflect.findClass(c.settings.settingsHandlerBaseClass, cl);
-    Object defaultHandler =
-        Reflect.getStaticObjectField(handlerBase, c.settings.fieldDefaultHandler);
-    String[] handlerFields = {
-      c.settings.fieldActionHandler,
-      c.settings.fieldIconProvider,
-      c.settings.fieldDescriptionProvider,
-      c.settings.fieldSubActionHandler,
-      c.settings.fieldVisibilityFilter
-    };
-    for (String field : handlerFields) {
-      try {
-        Reflect.setObjectField(rowModel, field, defaultHandler);
-        Reflect.setObjectField(headerModel, field, defaultHandler);
-      } catch (Throwable ignored) {
-      }
+    try {
+      Class<?> wrapperClass =
+          Reflect.findClass(c.settings.settingsAdapterWrapperClass, lpparam.classLoader);
+      Object section = Reflect.newInstance(wrapperClass, headerTemplate);
+      Object row = Reflect.newInstance(wrapperClass, rowTemplate);
+      injectedSectionItems.add(section);
+      injectedRowItems.add(row);
+      items.add(insertPos, section);
+      items.add(insertPos + 1, row);
+    } catch (Throwable e) {
+      Vector.log("Tencha: Settings template wrapping failed: " + e);
+      RuntimeReporter.partial("line_settings_ui", "LINE設定テンプレートの複製に失敗");
+      return chain.proceed();
     }
-    Object commonHandler = Reflect.getStaticObjectField(handlerBase, c.settings.fieldCommonHandler);
-    Reflect.setObjectField(rowModel, c.settings.fieldVisibilityFilter, commonHandler);
-    Reflect.setObjectField(headerModel, c.settings.fieldVisibilityFilter, commonHandler);
-    section = Reflect.newInstance(wrapperClass, headerModel);
-    row = Reflect.newInstance(wrapperClass, rowModel);
-    return new Object[] {section, row};
-  }
-
-  private static Object createFunctionProxy(Class<?> functionClass, ClassLoader cl, Object value) {
-    return Proxy.newProxyInstance(
-        cl,
-        new Class[] {functionClass},
-        (proxy, method, args) -> {
-          if (method.getDeclaringClass() == Object.class) {
-            String name = method.getName();
-            if ("toString".equals(name)) return "TenchaSettingsFunction";
-            if ("hashCode".equals(name)) return System.identityHashCode(proxy);
-            if ("equals".equals(name)) return proxy == (args == null ? null : args[0]);
-            return null;
-          }
-          return value;
-        });
+    return chain.proceed(new Object[] {items});
   }
 
   private Object bindVectorViewHolder(XposedInterface.Chain chain, Class<?> searchHelperCls)
@@ -377,32 +261,48 @@ public class SettingsUIInjector implements BaseHook {
     }
     LineVersion.Config c = LineVersion.get();
     int currentPos = (int) chain.getArg(1);
-    boolean ours = false;
+    boolean originalBound = false;
     try {
       Object currentItem =
           Reflect.callMethod(chain.getThisObject(), c.settings.methodGetItem, currentPos);
       if (currentItem == null) return chain.proceed();
-      if (currentItem.getClass().getName().equals(c.settings.settingsAdapterWrapperClass)) {
-        currentItem = Reflect.getObjectField(currentItem, c.settings.fieldItemModel);
-      }
-      if (currentItem == null) return chain.proceed();
+      boolean isSection = injectedSectionItems.contains(currentItem);
+      boolean isRow = injectedRowItems.contains(currentItem);
+      if (!isSection && !isRow) return chain.proceed();
 
-      String sourceTag = (String) Reflect.getObjectField(currentItem, c.settings.fieldModelTag);
-      if (!BRAND_TAG.equals(sourceTag)) return chain.proceed();
-
-      ours = true;
-
-      int entryType = Reflect.getIntField(currentItem, c.settings.fieldLayoutId);
+      Object result = chain.proceed();
+      originalBound = true;
       View itemView =
           (View) Reflect.getObjectField(chain.getArg(0), c.settings.fieldViewHolderView);
-      if (entryType == c.res.typeSection) {
-        if (itemView instanceof TextView) ((TextView) itemView).setText(BRAND_TAG);
-      } else if (entryType == c.res.typeRow) {
+      if (isSection) {
+        bindVectorSettingsSection(itemView, c);
+      } else {
         bindVectorSettingsRow(itemView, c);
       }
+      return result;
+    } catch (Throwable t) {
+      Vector.log("Tencha: Settings row binding failed: " + t);
+    }
+    return originalBound ? null : chain.proceed();
+  }
+
+  private void bindVectorSettingsSection(View itemView, LineVersion.Config c) {
+    if (itemView instanceof TextView) {
+      ((TextView) itemView).setText(BRAND_TAG);
+      return;
+    }
+    try {
+      Reflect.callMethod(itemView, c.settings.methodSetTitleText, BRAND_TAG);
+      return;
     } catch (Throwable ignored) {
     }
-    return ours ? null : chain.proceed();
+    TextView title = findFirstTextView(itemView);
+    if (title != null) {
+      title.setText(BRAND_TAG);
+    } else {
+      Vector.log("Tencha: Settings section title view was not found");
+      RuntimeReporter.partial("line_settings_ui", "Tencha見出しの表示に失敗");
+    }
   }
 
   private void bindVectorSettingsRow(View itemView, LineVersion.Config c) {
@@ -1709,9 +1609,10 @@ public class SettingsUIInjector implements BaseHook {
     }
   }
 
-  private static boolean containsVectorItem(Collection<?> items, LineVersion.Config c) {
+  private boolean containsVectorItem(Collection<?> items, LineVersion.Config c) {
     if (items == null) return false;
     for (Object item : items) {
+      if (injectedSectionItems.contains(item) || injectedRowItems.contains(item)) return true;
       try {
         Object model = Reflect.getObjectField(item, c.settings.fieldItemModel);
         if (model == null) continue;
@@ -1721,6 +1622,32 @@ public class SettingsUIInjector implements BaseHook {
       }
     }
     return false;
+  }
+
+  static boolean hasIntFieldValue(Object holder, int expectedValue) {
+    if (holder == null) return false;
+    for (Class<?> type = holder.getClass(); type != null; type = type.getSuperclass()) {
+      for (Field field : type.getDeclaredFields()) {
+        if (Modifier.isStatic(field.getModifiers()) || field.getType() != int.class) continue;
+        try {
+          field.setAccessible(true);
+          if (field.getInt(holder) == expectedValue) return true;
+        } catch (Throwable ignored) {
+        }
+      }
+    }
+    return false;
+  }
+
+  private static TextView findFirstTextView(View root) {
+    if (root instanceof TextView) return (TextView) root;
+    if (!(root instanceof ViewGroup)) return null;
+    ViewGroup group = (ViewGroup) root;
+    for (int i = 0; i < group.getChildCount(); i++) {
+      TextView result = findFirstTextView(group.getChildAt(i));
+      if (result != null) return result;
+    }
+    return null;
   }
 
   private boolean isTargetSettingsAdapter(Object candidate, Class<?> searchHelperCls) {
@@ -1783,15 +1710,6 @@ public class SettingsUIInjector implements BaseHook {
       }
     } catch (Throwable ignored) {
     }
-  }
-
-  private static Object createAdapterItemProxy(Class<?> itf, ClassLoader cl, int type) {
-    LineVersion.Config currentCfg = LineVersion.get();
-    return Proxy.newProxyInstance(
-        cl,
-        new Class[] {itf},
-        (proxy, method, args) ->
-            currentCfg.settings.methodProxyGetItemType.equals(method.getName()) ? type : null);
   }
 
   private void setupSearchBox(

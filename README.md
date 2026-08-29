@@ -14,7 +14,7 @@ root版APKと非root版LSPatchセットは[GitHub Releases](https://github.com/y
 
 - パッケージ: `jp.naver.line.android`
 - 専用対応LINE: `26.13.0` / versionCode `261300096`
-- LINE設定入口: 最新APKの`i85.b -> g35.e -> g68.f`系と`k35.s` / `k35.v`ネイティブモデルに専用対応
+- LINE設定入口: 最新APKの`i85.b -> g35.e -> g68.f`系に専用対応し、LINEが実際に生成した`k35.s` / `k35.v`をテンプレートとして利用
 - 未登録版: 8個の構造アンカーを検査し、5個以上一致した既知設定だけ自動適用
 - Xposed API: 101以上（target API 102）
 - 想定環境: Root + Zygisk + Vector
@@ -26,7 +26,7 @@ root版APKと非root版LSPatchセットは[GitHub Releases](https://github.com/y
 
 ### Root端末
 
-1. Releasesから`Tencha-root-1.5.26.apk`をインストールします。
+1. Releasesから`Tencha-root-1.5.27.apk`をインストールします。
 2. Vectorで「Tencha」を有効化します。
 3. スコープはLINE (`jp.naver.line.android`) だけにします。
 4. モジュールAPKを開き、「機能設定」から必要な機能をONにします。

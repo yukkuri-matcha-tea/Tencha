@@ -24,6 +24,22 @@ public class SettingsUIInjectorTest {
     }
   }
 
+  private static class ResourceBase {
+    private final int resourceId;
+
+    ResourceBase(int resourceId) {
+      this.resourceId = resourceId;
+    }
+  }
+
+  private static final class HeaderModel extends ResourceBase {
+    private static final int UNRELATED_STATIC_ID = 42;
+
+    HeaderModel(int resourceId) {
+      super(resourceId);
+    }
+  }
+
   @Test
   public void findsFragmentOwnerInAdapterSuperclass() {
     Owner owner = new Owner();
@@ -38,5 +54,12 @@ public class SettingsUIInjectorTest {
     assertFalse(
         SettingsUIInjector.hasInstanceFieldValue(
             adapter, MainSettingsAdapter.UNRELATED_STATIC_OWNER));
+  }
+
+  @Test
+  public void findsPrivateIntFieldInModelSuperclass() {
+    assertTrue(SettingsUIInjector.hasIntFieldValue(new HeaderModel(1234), 1234));
+    assertFalse(SettingsUIInjector.hasIntFieldValue(new HeaderModel(1234), 42));
+    assertFalse(SettingsUIInjector.hasIntFieldValue(new HeaderModel(1234), 5678));
   }
 }
