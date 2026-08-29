@@ -18,11 +18,12 @@ public final class Version26131 {
     v.settings.settingsRowItemClass = "i35.t";
     v.settings.settingsHandlerBaseClass = "i35.w";
 
-    // These IDs moved in 26.13.1 even though the surrounding settings layouts stayed stable.
-    v.res.idIcon = 0x7f0b2296;
-    v.res.idDesc = 0x7f0b2294;
-    v.res.idSeparator = 0x7f0b2295;
-    v.res.idTitle = 0x7f0b229c;
+    // The cloned Account row still uses the generic setting_* views in 26.13.1.
+    // Do not use the similarly named setting_item_* IDs: those belong to a different layout.
+    v.res.idIcon = 0x7f0b2290;
+    v.res.idDesc = 0x7f0b2282;
+    v.res.idSeparator = 0x7f0b22cb;
+    v.res.idTitle = 0x7f0b22d3;
 
     return v;
   }

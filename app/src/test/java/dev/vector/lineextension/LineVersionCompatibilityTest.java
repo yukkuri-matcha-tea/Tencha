@@ -37,8 +37,10 @@ public class LineVersionCompatibilityTest {
     assertEquals("i35.r", config.settings.settingsHeaderItemClass);
     assertEquals("i35.t", config.settings.settingsRowItemClass);
     assertEquals("h35.a", config.settings.settingsAdapterWrapperClass);
-    assertEquals(0x7f0b2296, config.res.idIcon);
-    assertEquals(0x7f0b229c, config.res.idTitle);
+    assertEquals(0x7f0b2290, config.res.idIcon);
+    assertEquals(0x7f0b2282, config.res.idDesc);
+    assertEquals(0x7f0b22cb, config.res.idSeparator);
+    assertEquals(0x7f0b22d3, config.res.idTitle);
   }
 
   @Test
