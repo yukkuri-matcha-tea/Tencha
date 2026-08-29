@@ -28,6 +28,18 @@ public class LineVersionCompatibilityTest {
   }
 
   @Test
+  public void latestVerifiedVersionUsesNativeSettingsModelMapping() {
+    LineVersion.Config config = LineVersion.resolveVersion("26.13.0", name -> false);
+    assertNotNull(config);
+    assertEquals("exact", LineVersion.getCompatibilityState());
+    assertEquals("k35.s", config.settings.settingsHeaderItemClass);
+    assertEquals("k35.v", config.settings.settingsRowItemClass);
+    assertEquals("kh8.p", config.settings.settingsSuspendFunction2Class);
+    assertEquals("kh8.l", config.settings.settingsFunction1Class);
+    assertEquals("k35.v0$a", config.settings.settingsDefaultNavigationClass);
+  }
+
+  @Test
   public void unknownVersionUsesNewestStructurallyCompatibleConfig() {
     assertNotNull(LineVersion.resolveVersion("26.14.0", name -> true));
     assertEquals("automatic", LineVersion.getCompatibilityState());

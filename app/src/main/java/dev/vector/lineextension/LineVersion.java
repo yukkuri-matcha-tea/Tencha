@@ -241,6 +241,12 @@ public class LineVersion {
       public String settingsHeaderItemClass = "";
       public String settingsRowItemClass = "";
       public String settingsHandlerBaseClass = "";
+      public String settingsSuspendFunction2Class = "";
+      public String settingsFunction1Class = "";
+      public String settingsIconProviderClass = "";
+      public String settingsNavigationClass = "";
+      public String settingsDefaultNavigationClass = "";
+      public String fieldDefaultNavigation = "";
       public String fieldIsVisible = "";
       public String fieldLayoutId = "";
       public String fieldActionHandler = "";

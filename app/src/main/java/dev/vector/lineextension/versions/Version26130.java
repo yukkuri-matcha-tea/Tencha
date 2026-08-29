@@ -34,6 +34,12 @@ public class Version26130 {
     v.settings.settingsHeaderItemClass = "k35.s";
     v.settings.settingsRowItemClass = "k35.v";
     v.settings.settingsHandlerBaseClass = "k35.a0";
+    v.settings.settingsSuspendFunction2Class = "kh8.p";
+    v.settings.settingsFunction1Class = "kh8.l";
+    v.settings.settingsIconProviderClass = "j68.e";
+    v.settings.settingsNavigationClass = "k35.v0";
+    v.settings.settingsDefaultNavigationClass = "k35.v0$a";
+    v.settings.fieldDefaultNavigation = "a";
     v.settings.methodSetItems = "n";
     v.settings.methodBindViewHolder = "r";
     v.settings.methodGetItem = "q";

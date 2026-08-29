@@ -43,6 +43,7 @@ import dev.vector.lineextension.utils.LineTheme;
 import dev.vector.lineextension.utils.ModuleStrings;
 import io.github.libxposed.api.XposedInterface;
 import java.io.File;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
@@ -228,69 +229,145 @@ public class SettingsUIInjector implements BaseHook {
       } catch (Throwable ignored) {
       }
     }
-    Object section = createAdapterItemProxy(proxyInterface, lpparam.classLoader, c.res.typeSection);
-    Object row = createAdapterItemProxy(proxyInterface, lpparam.classLoader, c.res.typeRow);
-
-    if (c.settings.settingsAdapterWrapperClass != null
-        && !c.settings.settingsAdapterWrapperClass.isEmpty()) {
-      try {
-        Class<?> wrapperCls =
-            Reflect.findClass(c.settings.settingsAdapterWrapperClass, lpparam.classLoader);
-        Class<?> headerCls =
-            Reflect.findClass(c.settings.settingsHeaderItemClass, lpparam.classLoader);
-        Class<?> itemCls = Reflect.findClass(c.settings.settingsRowItemClass, lpparam.classLoader);
-
-        Class<?> unsafeCls = Reflect.findClass("sun.misc.Unsafe", (ClassLoader) null);
-        Object unsafe = Reflect.getStaticObjectField(unsafeCls, "theUnsafe");
-
-        Object dummyHeader = Reflect.callMethod(unsafe, "allocateInstance", headerCls);
-        Object dummyRow = Reflect.callMethod(unsafe, "allocateInstance", itemCls);
-
-        Reflect.setIntField(dummyHeader, c.settings.fieldLayoutId, c.res.typeSection);
-        Reflect.setIntField(dummyRow, c.settings.fieldLayoutId, c.res.typeRow);
-
-        section = Reflect.newInstance(wrapperCls, dummyHeader);
-        row = Reflect.newInstance(wrapperCls, dummyRow);
-
-        Reflect.setObjectField(dummyHeader, c.settings.fieldModelTag, BRAND_TAG);
-        Reflect.setObjectField(dummyRow, c.settings.fieldModelTag, BRAND_TAG);
-
-        Reflect.setBooleanField(dummyHeader, c.settings.fieldIsVisible, true);
-
-        Class<?> bc = Reflect.findClass(c.settings.settingsHandlerBaseClass, lpparam.classLoader);
-        Object dummyHandler = Reflect.getStaticObjectField(bc, c.settings.fieldDefaultHandler);
-
-        String[] handlerFields = {
-          c.settings.fieldActionHandler,
-          c.settings.fieldIconProvider,
-          c.settings.fieldDescriptionProvider,
-          c.settings.fieldSubActionHandler,
-          c.settings.fieldVisibilityFilter
-        };
-        for (String f : handlerFields) {
-          try {
-            Reflect.setObjectField(dummyRow, f, dummyHandler);
-            Reflect.setObjectField(dummyHeader, f, dummyHandler);
-          } catch (Throwable ignored) {
-          }
-        }
-
-        Reflect.setObjectField(
-            dummyRow,
-            c.settings.fieldVisibilityFilter,
-            Reflect.getStaticObjectField(bc, c.settings.fieldCommonHandler));
-        Reflect.setObjectField(
-            dummyHeader,
-            c.settings.fieldVisibilityFilter,
-            Reflect.getStaticObjectField(bc, c.settings.fieldCommonHandler));
-      } catch (Throwable e) {
-        Vector.log("Tencha: Adapter wrapper failed: " + e);
+    Object section;
+    Object row;
+    try {
+      if (!c.settings.settingsSuspendFunction2Class.isEmpty()) {
+        Object[] nativeItems = createNativeSettingsItems(c, lpparam.classLoader);
+        section = nativeItems[0];
+        row = nativeItems[1];
+      } else {
+        Object[] legacyItems = createLegacySettingsItems(c, lpparam.classLoader, proxyInterface);
+        section = legacyItems[0];
+        row = legacyItems[1];
       }
+    } catch (Throwable e) {
+      Vector.log("Tencha: Settings model creation failed: " + e);
+      RuntimeReporter.partial("line_settings_ui", "LINE設定モデルの生成に失敗");
+      return chain.proceed();
     }
 
     items.add(insertPos, section);
     items.add(insertPos + 1, row);
     return chain.proceed(new Object[] {items});
+  }
+
+  private static Object[] createNativeSettingsItems(LineVersion.Config c, ClassLoader cl)
+      throws Throwable {
+    Class<?> wrapperClass = Reflect.findClass(c.settings.settingsAdapterWrapperClass, cl);
+    Class<?> headerClass = Reflect.findClass(c.settings.settingsHeaderItemClass, cl);
+    Class<?> rowClass = Reflect.findClass(c.settings.settingsRowItemClass, cl);
+    Class<?> suspendFunction2 = Reflect.findClass(c.settings.settingsSuspendFunction2Class, cl);
+    Class<?> function1 = Reflect.findClass(c.settings.settingsFunction1Class, cl);
+    Class<?> iconProvider = Reflect.findClass(c.settings.settingsIconProviderClass, cl);
+    Class<?> navigation = Reflect.findClass(c.settings.settingsNavigationClass, cl);
+    Class<?> defaultNavigation = Reflect.findClass(c.settings.settingsDefaultNavigationClass, cl);
+
+    Object suspendTrue = createFunctionProxy(suspendFunction2, cl, Boolean.TRUE);
+    Object suspendNull = createFunctionProxy(suspendFunction2, cl, null);
+    Object functionNull = createFunctionProxy(function1, cl, null);
+    Object navigationValue =
+        Reflect.getStaticObjectField(defaultNavigation, c.settings.fieldDefaultNavigation);
+
+    Constructor<?> headerConstructor =
+        Reflect.findConstructorExact(
+            headerClass, int.class, boolean.class, boolean.class, suspendFunction2);
+    Object headerModel =
+        headerConstructor.newInstance(c.res.idPersonalInfo, true, false, suspendTrue);
+    Reflect.setObjectField(headerModel, c.settings.fieldModelTag, BRAND_TAG);
+
+    Constructor<?> rowConstructor =
+        Reflect.findConstructorExact(
+            rowClass,
+            String.class,
+            Integer.class,
+            int.class,
+            suspendFunction2,
+            suspendFunction2,
+            Integer.class,
+            suspendFunction2,
+            iconProvider,
+            function1,
+            function1,
+            navigation,
+            suspendFunction2,
+            boolean.class);
+    Object rowModel =
+        rowConstructor.newInstance(
+            BRAND_TAG,
+            null,
+            c.res.idPersonalInfo,
+            suspendNull,
+            suspendNull,
+            null,
+            suspendNull,
+            null,
+            functionNull,
+            functionNull,
+            navigationValue,
+            suspendTrue,
+            true);
+
+    return new Object[] {
+      Reflect.newInstance(wrapperClass, headerModel), Reflect.newInstance(wrapperClass, rowModel)
+    };
+  }
+
+  private static Object[] createLegacySettingsItems(
+      LineVersion.Config c, ClassLoader cl, Class<?> proxyInterface) {
+    Object section = createAdapterItemProxy(proxyInterface, cl, c.res.typeSection);
+    Object row = createAdapterItemProxy(proxyInterface, cl, c.res.typeRow);
+    Class<?> wrapperClass = Reflect.findClass(c.settings.settingsAdapterWrapperClass, cl);
+    Class<?> headerClass = Reflect.findClass(c.settings.settingsHeaderItemClass, cl);
+    Class<?> rowClass = Reflect.findClass(c.settings.settingsRowItemClass, cl);
+    Class<?> unsafeClass = Reflect.findClass("sun.misc.Unsafe", (ClassLoader) null);
+    Object unsafe = Reflect.getStaticObjectField(unsafeClass, "theUnsafe");
+    Object headerModel = Reflect.callMethod(unsafe, "allocateInstance", headerClass);
+    Object rowModel = Reflect.callMethod(unsafe, "allocateInstance", rowClass);
+    Reflect.setIntField(headerModel, c.settings.fieldLayoutId, c.res.typeSection);
+    Reflect.setIntField(rowModel, c.settings.fieldLayoutId, c.res.typeRow);
+    Reflect.setObjectField(headerModel, c.settings.fieldModelTag, BRAND_TAG);
+    Reflect.setObjectField(rowModel, c.settings.fieldModelTag, BRAND_TAG);
+    Reflect.setBooleanField(headerModel, c.settings.fieldIsVisible, true);
+    Class<?> handlerBase = Reflect.findClass(c.settings.settingsHandlerBaseClass, cl);
+    Object defaultHandler =
+        Reflect.getStaticObjectField(handlerBase, c.settings.fieldDefaultHandler);
+    String[] handlerFields = {
+      c.settings.fieldActionHandler,
+      c.settings.fieldIconProvider,
+      c.settings.fieldDescriptionProvider,
+      c.settings.fieldSubActionHandler,
+      c.settings.fieldVisibilityFilter
+    };
+    for (String field : handlerFields) {
+      try {
+        Reflect.setObjectField(rowModel, field, defaultHandler);
+        Reflect.setObjectField(headerModel, field, defaultHandler);
+      } catch (Throwable ignored) {
+      }
+    }
+    Object commonHandler = Reflect.getStaticObjectField(handlerBase, c.settings.fieldCommonHandler);
+    Reflect.setObjectField(rowModel, c.settings.fieldVisibilityFilter, commonHandler);
+    Reflect.setObjectField(headerModel, c.settings.fieldVisibilityFilter, commonHandler);
+    section = Reflect.newInstance(wrapperClass, headerModel);
+    row = Reflect.newInstance(wrapperClass, rowModel);
+    return new Object[] {section, row};
+  }
+
+  private static Object createFunctionProxy(Class<?> functionClass, ClassLoader cl, Object value) {
+    return Proxy.newProxyInstance(
+        cl,
+        new Class[] {functionClass},
+        (proxy, method, args) -> {
+          if (method.getDeclaringClass() == Object.class) {
+            String name = method.getName();
+            if ("toString".equals(name)) return "TenchaSettingsFunction";
+            if ("hashCode".equals(name)) return System.identityHashCode(proxy);
+            if ("equals".equals(name)) return proxy == (args == null ? null : args[0]);
+            return null;
+          }
+          return value;
+        });
   }
 
   private Object bindVectorViewHolder(XposedInterface.Chain chain, Class<?> searchHelperCls)

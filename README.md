@@ -2,7 +2,7 @@
 
 **Enhance your LINE.**
 
-Android版LINE 26.13.0を基準に、更新後の構造互換性を起動時に検証する非公式Vector / Xposed拡張モジュールです。
+Android版LINE 26.13.0 / versionCode 261300096の実APKを専用マッピングした、非公式Vector / Xposed拡張モジュールです。未登録の将来版だけは、起動時に構造互換性を別途検査します。
 
 LINEヤフー株式会社とは無関係です。アカウント制限、データ消失、LINE更新による非互換などの可能性があります。重要なトークやメディアは事前にバックアップし、自己責任で使用してください。
 
@@ -13,7 +13,8 @@ root版APKと非root版LSPatchセットは[GitHub Releases](https://github.com/y
 ## 対応環境
 
 - パッケージ: `jp.naver.line.android`
-- 検証済みLINE: `26.13.0` / versionCode `261300096`
+- 専用対応LINE: `26.13.0` / versionCode `261300096`
+- LINE設定入口: 最新APKの`i85.b -> g35.e -> g68.f`系と`k35.s` / `k35.v`ネイティブモデルに専用対応
 - 未登録版: 8個の構造アンカーを検査し、5個以上一致した既知設定だけ自動適用
 - Xposed API: 101以上（target API 102）
 - 想定環境: Root + Zygisk + Vector
@@ -25,7 +26,7 @@ root版APKと非root版LSPatchセットは[GitHub Releases](https://github.com/y
 
 ### Root端末
 
-1. Releasesから`Tencha-root-1.5.25.apk`をインストールします。
+1. Releasesから`Tencha-root-1.5.26.apk`をインストールします。
 2. Vectorで「Tencha」を有効化します。
 3. スコープはLINE (`jp.naver.line.android`) だけにします。
 4. モジュールAPKを開き、「機能設定」から必要な機能をONにします。
