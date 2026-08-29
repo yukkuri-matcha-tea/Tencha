@@ -43,6 +43,8 @@ import dev.vector.lineextension.utils.LineTheme;
 import dev.vector.lineextension.utils.ModuleStrings;
 import io.github.libxposed.api.XposedInterface;
 import java.io.File;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -177,16 +179,19 @@ public class SettingsUIInjector implements BaseHook {
   }
 
   private Object onSettingsFragmentViewCreated(XposedInterface.Chain chain) throws Throwable {
+    // LINE can populate the adapter synchronously from inside onViewCreated. Record the owner
+    // before proceeding so the nested adapter callback is recognized on its first and only pass.
+    targetFragment = chain.getThisObject();
     Object result = chain.proceed();
     try {
       LineVersion.Config c = LineVersion.get();
-      targetFragment = chain.getThisObject();
       View listView = ((View) chain.getArg(0)).findViewById(c.res.idSettingList);
       if (listView != null) targetAdapter = Reflect.callMethod(listView, "getAdapter");
       openSettingsAction =
           () ->
               displaySettingsDialog((Context) Reflect.callMethod(targetFragment, "requireContext"));
-    } catch (Throwable ignored) {
+    } catch (Throwable t) {
+      Vector.log("Tencha: Settings owner capture failed: " + t);
     }
     return result;
   }
@@ -199,8 +204,7 @@ public class SettingsUIInjector implements BaseHook {
       throws Throwable {
     LineVersion.Config c = LineVersion.get();
     Collection<?> sourceItems = (Collection<?>) chain.getArg(0);
-    if (chain.getThisObject() != targetAdapter
-        && !searchHelperCls.isInstance(chain.getThisObject())) {
+    if (!isTargetSettingsAdapter(chain.getThisObject(), searchHelperCls)) {
       return chain.proceed();
     }
     if (containsVectorItem(sourceItems, c)) return chain.proceed();
@@ -291,8 +295,7 @@ public class SettingsUIInjector implements BaseHook {
 
   private Object bindVectorViewHolder(XposedInterface.Chain chain, Class<?> searchHelperCls)
       throws Throwable {
-    if (chain.getThisObject() != targetAdapter
-        && !searchHelperCls.isInstance(chain.getThisObject())) {
+    if (!isTargetSettingsAdapter(chain.getThisObject(), searchHelperCls)) {
       return chain.proceed();
     }
     LineVersion.Config c = LineVersion.get();
@@ -1638,6 +1641,35 @@ public class SettingsUIInjector implements BaseHook {
         Object tag = Reflect.getObjectField(model, c.settings.fieldModelTag);
         if (BRAND_TAG.equals(tag)) return true;
       } catch (Throwable ignored) {
+      }
+    }
+    return false;
+  }
+
+  private boolean isTargetSettingsAdapter(Object candidate, Class<?> searchHelperCls) {
+    if (candidate == null) return false;
+    if (candidate == targetAdapter || searchHelperCls.isInstance(candidate)) return true;
+
+    Object owner = targetFragment;
+    if (owner != null && hasInstanceFieldValue(candidate, owner)) {
+      targetAdapter = candidate;
+      Vector.log("Tencha: Settings adapter resolved from fragment ownership");
+      return true;
+    }
+    return false;
+  }
+
+  static boolean hasInstanceFieldValue(Object holder, Object expectedValue) {
+    if (holder == null || expectedValue == null) return false;
+    for (Class<?> type = holder.getClass(); type != null; type = type.getSuperclass()) {
+      for (Field field : type.getDeclaredFields()) {
+        if (Modifier.isStatic(field.getModifiers())) continue;
+        if (!field.getType().isAssignableFrom(expectedValue.getClass())) continue;
+        try {
+          field.setAccessible(true);
+          if (field.get(holder) == expectedValue) return true;
+        } catch (Throwable ignored) {
+        }
       }
     }
     return false;
