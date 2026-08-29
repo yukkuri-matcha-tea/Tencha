@@ -307,6 +307,15 @@ public class SettingsUIInjector implements BaseHook {
 
   private void bindVectorSettingsRow(View itemView, LineVersion.Config c) {
     RuntimeReporter.working("line_settings_ui", "LINE設定内の拡張入口をRuntime確認");
+    try {
+      Reflect.callMethod(itemView, c.settings.methodRowSetTitleText, ModuleStrings.SETTINGS_TITLE);
+      Reflect.callMethod(itemView, c.settings.methodRowSetDescription, (CharSequence) null);
+      Reflect.callMethod(itemView, c.settings.methodRowSetArrowVisible, true);
+      Reflect.callMethod(itemView, c.settings.methodRowSetDividerVisible, false);
+      Reflect.callMethod(itemView, "setNewBadgeVisible", false);
+    } catch (Throwable t) {
+      Vector.log("Tencha: Native settings row update fallback: " + t);
+    }
     applyVisibility(itemView, c.res.idIcon, View.VISIBLE);
     applyVisibility(itemView, c.res.idDesc, View.GONE);
     applyVisibility(itemView, c.res.idMark, View.GONE);

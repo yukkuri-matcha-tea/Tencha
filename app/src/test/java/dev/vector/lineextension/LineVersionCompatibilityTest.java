@@ -29,26 +29,30 @@ public class LineVersionCompatibilityTest {
 
   @Test
   public void latestVerifiedVersionUsesLiveSettingsTemplateMapping() {
-    LineVersion.Config config = LineVersion.resolveVersion("26.13.0", name -> false);
+    LineVersion.Config config = LineVersion.resolveVersion("26.13.1", name -> false);
     assertNotNull(config);
     assertEquals("exact", LineVersion.getCompatibilityState());
-    assertEquals("k35.s", config.settings.settingsHeaderItemClass);
-    assertEquals("k35.v", config.settings.settingsRowItemClass);
-    assertEquals("j35.a", config.settings.settingsAdapterWrapperClass);
+    assertEquals("d68.f", config.settings.settingsAdapterClass);
+    assertEquals("g85.b", config.settings.settingsSearchHelperClass);
+    assertEquals("i35.r", config.settings.settingsHeaderItemClass);
+    assertEquals("i35.t", config.settings.settingsRowItemClass);
+    assertEquals("h35.a", config.settings.settingsAdapterWrapperClass);
+    assertEquals(0x7f0b2296, config.res.idIcon);
+    assertEquals(0x7f0b229c, config.res.idTitle);
   }
 
   @Test
   public void unknownVersionUsesNewestStructurallyCompatibleConfig() {
     assertNotNull(LineVersion.resolveVersion("26.14.0", name -> true));
     assertEquals("automatic", LineVersion.getCompatibilityState());
-    assertEquals("26.13.0", LineVersion.getResolvedVersionName());
+    assertEquals("26.13.1", LineVersion.getResolvedVersionName());
   }
 
   @Test
   public void missingVersionNameCanStillUseStructuralCompatibility() {
     assertNotNull(LineVersion.resolveVersion(null, name -> true));
     assertEquals("automatic", LineVersion.getCompatibilityState());
-    assertEquals("26.13.0", LineVersion.getResolvedVersionName());
+    assertEquals("26.13.1", LineVersion.getResolvedVersionName());
   }
 
   @Test
