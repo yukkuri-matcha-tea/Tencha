@@ -5,13 +5,31 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class LineVersion {
 
   private static volatile String detectedVersionName = "";
+  private static volatile String resolvedVersionName = "";
+  private static volatile String compatibilityState = "unknown";
+  private static volatile String compatibilityDetail = "";
+  private static final Pattern SEMANTIC_VERSION = Pattern.compile("(\\d+)\\.(\\d+)\\.(\\d+)");
 
   public static String getDetectedVersionName() {
     return detectedVersionName;
+  }
+
+  public static String getResolvedVersionName() {
+    return resolvedVersionName;
+  }
+
+  public static String getCompatibilityState() {
+    return compatibilityState;
+  }
+
+  public static String getCompatibilityDetail() {
+    return compatibilityDetail;
   }
 
   public static class Config {
@@ -592,26 +610,126 @@ public class LineVersion {
 
   public static Config detect(ClassLoader cl) {
     if (cachedConfig != null) return cachedConfig;
-    return matchVersion(getVersionName(Vector.currentApplication()));
+    return resolveVersion(getVersionName(Vector.currentApplication()), classProbe(cl));
   }
 
   public static Config detectWithContext(android.content.Context context) {
     if (cachedConfig != null) return cachedConfig;
-    return matchVersion(getVersionName(context));
+    return resolveVersion(getVersionName(context), null);
   }
 
-  private static Config matchVersion(String verName) {
-    if (verName == null) return null;
-    detectedVersionName = verName;
-    Vector.log("Tencha: Detected LINE version: " + verName);
-    for (Map.Entry<String, Config> entry : VERSION_TABLE.entrySet()) {
-      if (verName.startsWith(entry.getKey())) {
-        cachedConfig = entry.getValue();
-        return cachedConfig;
+  public static Config detectWithContext(android.content.Context context, ClassLoader cl) {
+    if (cachedConfig != null) return cachedConfig;
+    return resolveVersion(getVersionName(context), classProbe(cl));
+  }
+
+  interface ClassProbe {
+    boolean exists(String className);
+  }
+
+  static Config resolveVersion(String verName, ClassProbe probe) {
+    String rawVersion = verName == null ? "" : verName;
+    detectedVersionName = rawVersion;
+    safeLog("Tencha: Detected LINE version: " + displayVersion(rawVersion));
+
+    String normalized = normalizeVersion(rawVersion);
+    Config exact = VERSION_TABLE.get(normalized);
+    if (exact != null) {
+      cachedConfig = exact;
+      resolvedVersionName = normalized;
+      compatibilityState = "exact";
+      compatibilityDetail = "正式対応";
+      return exact;
+    }
+
+    if (probe != null) {
+      List<String> candidates = new ArrayList<>(VERSION_TABLE.keySet());
+      candidates.sort((left, right) -> Integer.compare(versionScore(right), versionScore(left)));
+      for (String candidateVersion : candidates) {
+        Config candidate = VERSION_TABLE.get(candidateVersion);
+        int score = compatibilityScore(candidate, probe);
+        if (score >= 5) {
+          cachedConfig = candidate;
+          resolvedVersionName = candidateVersion;
+          compatibilityState = "automatic";
+          compatibilityDetail =
+              "LINE "
+                  + displayVersion(verName)
+                  + " に "
+                  + candidateVersion
+                  + " の構造を検証して自動適用 ("
+                  + score
+                  + "/8)";
+          safeLog("Tencha: " + compatibilityDetail);
+          return candidate;
+        }
       }
     }
-    Vector.log("Tencha: Unsupported LINE version: " + verName);
+
+    resolvedVersionName = "";
+    compatibilityState = "unsupported";
+    compatibilityDetail = "互換構造を確認できないため全機能を停止";
+    safeLog("Tencha: Unsupported LINE version: " + displayVersion(rawVersion));
     return null;
+  }
+
+  static String normalizeVersion(String rawVersion) {
+    if (rawVersion == null) return "";
+    Matcher matcher = SEMANTIC_VERSION.matcher(rawVersion);
+    return matcher.find() ? matcher.group(1) + "." + matcher.group(2) + "." + matcher.group(3) : "";
+  }
+
+  private static String displayVersion(String rawVersion) {
+    String normalized = normalizeVersion(rawVersion);
+    if (!normalized.isEmpty()) return normalized;
+    return rawVersion == null || rawVersion.isBlank() ? "不明" : rawVersion;
+  }
+
+  private static ClassProbe classProbe(ClassLoader cl) {
+    if (cl == null) return null;
+    return className -> {
+      if (className == null || className.isEmpty()) return false;
+      try {
+        Class.forName(className, false, cl);
+        return true;
+      } catch (Throwable ignored) {
+        return false;
+      }
+    };
+  }
+
+  private static int compatibilityScore(Config config, ClassProbe probe) {
+    if (!probe.exists(config.main.mainActivity)) return 0;
+    int score = 1;
+    String[] anchors = {
+      config.settings.mainSettingsFragmentClass,
+      config.settings.settingsAdapterClass,
+      config.plusMenu.plusMenuComponentClass,
+      config.readReceipt.readReceiptManagerClass,
+      config.unsend.notifiedReadMessageHandlerClass,
+      config.compose.composerClass,
+      config.iab.inAppBrowserActivityClass
+    };
+    for (String anchor : anchors) {
+      if (probe.exists(anchor)) score++;
+    }
+    return score;
+  }
+
+  static void resetResolutionForTests() {
+    cachedConfig = null;
+    detectedVersionName = "";
+    resolvedVersionName = "";
+    compatibilityState = "unknown";
+    compatibilityDetail = "";
+  }
+
+  private static void safeLog(String message) {
+    try {
+      Vector.log(message);
+    } catch (Throwable ignored) {
+      // Version resolution must never depend on the active logging backend.
+    }
   }
 
   public static String getSupportedVersions() {

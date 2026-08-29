@@ -124,11 +124,21 @@ public final class ControlClient {
   }
 
   public static void reportSession(
-      Context context, String lineVersion, String processName, String loaderMode) {
+      Context context,
+      String lineVersion,
+      String processName,
+      String loaderMode,
+      String compatibilityState,
+      String resolvedVersion,
+      String compatibilityDetail) {
     Bundle data = new Bundle();
     data.putString("lineVersion", lineVersion == null ? "" : lineVersion);
     data.putString("process", processName == null ? "" : processName);
     data.putString("loaderMode", RuntimeEnvironment.sanitizeMode(loaderMode));
+    data.putString(
+        "compatibilityState", compatibilityState == null ? "unknown" : compatibilityState);
+    data.putString("resolvedVersion", resolvedVersion == null ? "" : resolvedVersion);
+    data.putString("compatibilityDetail", compatibilityDetail == null ? "" : compatibilityDetail);
     call(context, "reportSession", null, data);
   }
 

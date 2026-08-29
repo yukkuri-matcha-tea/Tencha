@@ -40,6 +40,9 @@ public final class ControlProvider extends ContentProvider {
   private static final String LAST_LINE_VERSION = "runtime.line_version";
   private static final String LAST_LINE_PROCESS = "runtime.line_process";
   private static final String LAST_LOADER_MODE = "runtime.loader_mode";
+  private static final String LAST_COMPATIBILITY_STATE = "runtime.compatibility_state";
+  private static final String LAST_RESOLVED_VERSION = "runtime.resolved_version";
+  private static final String LAST_COMPATIBILITY_DETAIL = "runtime.compatibility_detail";
   public static final String LINE_BACKUP_FILE = "line_chat_backup.tenchabak";
   public static final String LINE_BACKUP_TEMP_FILE = "line_chat_backup.tmp";
   public static final String LINE_RESTORE_FILE = "line_chat_restore.pending";
@@ -97,7 +100,16 @@ public final class ControlProvider extends ContentProvider {
                 .putString(LAST_LINE_PROCESS, sanitizeText(session.getString("process", ""), 128))
                 .putString(
                     LAST_LOADER_MODE,
-                    RuntimeEnvironment.sanitizeMode(session.getString("loaderMode", "")));
+                    RuntimeEnvironment.sanitizeMode(session.getString("loaderMode", "")))
+                .putString(
+                    LAST_COMPATIBILITY_STATE,
+                    sanitizeCompatibilityState(session.getString("compatibilityState", "unknown")))
+                .putString(
+                    LAST_RESOLVED_VERSION,
+                    sanitizeText(session.getString("resolvedVersion", ""), 64))
+                .putString(
+                    LAST_COMPATIBILITY_DETAIL,
+                    sanitizeText(session.getString("compatibilityDetail", ""), 256));
         for (String key : prefs.getAll().keySet()) {
           if (key.startsWith(PREFIX_STATUS)) {
             String id = key.substring(PREFIX_STATUS.length());
@@ -251,6 +263,9 @@ public final class ControlProvider extends ContentProvider {
     out.putString("lineProcess", prefs.getString(LAST_LINE_PROCESS, ""));
     out.putString("loaderMode", prefs.getString(LAST_LOADER_MODE, RuntimeEnvironment.MODE_UNKNOWN));
     out.putBoolean("loaderModeReported", prefs.contains(LAST_LOADER_MODE));
+    out.putString("compatibilityState", prefs.getString(LAST_COMPATIBILITY_STATE, "unknown"));
+    out.putString("resolvedVersion", prefs.getString(LAST_RESOLVED_VERSION, ""));
+    out.putString("compatibilityDetail", prefs.getString(LAST_COMPATIBILITY_DETAIL, ""));
     Set<String> ids = new HashSet<>();
     for (Map.Entry<String, ?> entry : prefs.getAll().entrySet()) {
       if (entry.getKey().startsWith(PREFIX_STATUS)) {
@@ -357,6 +372,13 @@ public final class ControlProvider extends ContentProvider {
   private static String sanitizeText(String value, int maxLength) {
     if (value == null) return "";
     return value.substring(0, Math.min(value.length(), maxLength));
+  }
+
+  private static String sanitizeCompatibilityState(String value) {
+    if ("exact".equals(value) || "automatic".equals(value) || "unsupported".equals(value)) {
+      return value;
+    }
+    return "unknown";
   }
 
   @Nullable

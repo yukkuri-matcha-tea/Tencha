@@ -7,6 +7,13 @@ import org.junit.Test
 
 class FeatureFilterTest {
   @Test
+  fun compatibilityLabelsExplainAutomaticAndStoppedModes() {
+    assertEquals("正式対応", compatibilityLabel("exact", "26.13.0"))
+    assertEquals("自動互換（26.13.0 構成）", compatibilityLabel("automatic", "26.13.0"))
+    assertEquals("互換性なし・全機能停止", compatibilityLabel("unsupported", ""))
+  }
+
+  @Test
   fun runtimeModeLabelSeparatesPendingAndFailedDetection() {
     assertEquals("Vector経由で動作中（root）", runtimeModeLabel("root", reported = true))
     assertEquals("LSPatch経由で動作中（非root）", runtimeModeLabel("lspatch", reported = true))

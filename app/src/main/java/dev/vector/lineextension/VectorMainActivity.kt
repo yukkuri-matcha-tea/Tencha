@@ -190,6 +190,14 @@ internal fun runtimeModeLabel(mode: String, reported: Boolean): String =
       }
   }
 
+internal fun compatibilityLabel(state: String, resolvedVersion: String): String =
+  when (state) {
+    "exact" -> "正式対応"
+    "automatic" -> if (resolvedVersion.isBlank()) "自動互換" else "自動互換（$resolvedVersion 構成）"
+    "unsupported" -> "互換性なし・全機能停止"
+    else -> "未確認"
+  }
+
 private val visibleFeatures =
   listOf(
     FeatureRow("read_block", "既読", "無効"),
@@ -309,6 +317,9 @@ private fun DashboardScreen(
   val connected = lastSeen > 0L
   val loaderMode = snapshot.getString("loaderMode", RuntimeEnvironment.MODE_UNKNOWN)
   val loaderModeReported = snapshot.getBoolean("loaderModeReported", false)
+  val compatibilityState = snapshot.getString("compatibilityState", "unknown")
+  val resolvedVersion = snapshot.getString("resolvedVersion", "")
+  val compatibilityDetail = snapshot.getString("compatibilityDetail", "")
   var nextLaunchOff by remember(snapshot) { mutableStateOf(snapshot.getBoolean("nextLaunchOff", false)) }
   val featureStates = visibleFeatures.map { it to snapshot.getBundle("feature.${it.id}") }
   val workingCount = featureStates.count { (_, state) -> state?.getString("status") == FeatureStatus.WORKING.name }
@@ -381,6 +392,21 @@ private fun DashboardScreen(
             ListItem(
               headlineContent = { Text("Tencha") },
               trailingContent = { Text(BuildConfig.VERSION_NAME, style = MaterialTheme.typography.labelLarge) },
+            )
+            ListItem(
+              headlineContent = { Text("LINE互換性") },
+              supportingContent = {
+                compatibilityDetail.takeIf { it.isNotBlank() }?.let {
+                  Text(it, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+              },
+              trailingContent = {
+                Text(
+                  compatibilityLabel(compatibilityState, resolvedVersion),
+                  style = MaterialTheme.typography.labelLarge,
+                  color = if (compatibilityState == "unsupported") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                )
+              },
             )
             ListItem(
               headlineContent = { Text("動作中の機能") },
@@ -772,6 +798,9 @@ private fun DiagnosticsScreen(
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   val ids = snapshot.getStringArrayList("featureIds").orEmpty().sorted()
+  val compatibilityState = snapshot.getString("compatibilityState", "unknown")
+  val resolvedVersion = snapshot.getString("resolvedVersion", "")
+  val compatibilityDetail = snapshot.getString("compatibilityDetail", "")
   Scaffold(
     topBar = { TopAppBar(title = { Text("診断・復旧") }, actions = { TextButton(onClick = onRefresh) { Text("更新") } }) },
     bottomBar = { TenchaNavigationBar(Screen.DIAGNOSTICS, onNavigate, updateAvailable) },
@@ -782,6 +811,28 @@ private fun DiagnosticsScreen(
       contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
       verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+      item {
+        Card {
+          ListItem(
+            headlineContent = { Text("LINE互換性: ${compatibilityLabel(compatibilityState, resolvedVersion)}") },
+            supportingContent = {
+              Text(
+                compatibilityDetail.ifBlank { "LINEを再起動すると互換性を検証します" },
+              )
+            },
+            trailingContent = {
+              StatusText(
+                when (compatibilityState) {
+                  "exact" -> "対応済み"
+                  "automatic" -> "自動互換"
+                  "unsupported" -> "互換性なし"
+                  else -> "未確認"
+                },
+              )
+            },
+          )
+        }
+      }
       item {
         Card {
           Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1147,7 +1198,7 @@ private fun AnimatedUpdateBadge(visible: Boolean) {
 private fun StatusDot(status: String) {
   val targetColor = when (status) {
     "動作中", "接続済み" -> MaterialTheme.colorScheme.primary
-    "Hook失敗", "Safe Mode", "未接続" -> MaterialTheme.colorScheme.error
+    "Hook失敗", "Safe Mode", "未接続", "互換性なし" -> MaterialTheme.colorScheme.error
     else -> MaterialTheme.colorScheme.outline
   }
   val color by animateColorAsState(targetColor, animationSpec = tween(250), label = "Status color")

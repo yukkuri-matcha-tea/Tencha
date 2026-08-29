@@ -2,7 +2,7 @@
 
 **Enhance your LINE.**
 
-Android版LINE 26.13.0向けの非公式Vector / Xposed拡張モジュールです。
+Android版LINE 26.13.0を基準に、更新後の構造互換性を起動時に検証する非公式Vector / Xposed拡張モジュールです。
 
 LINEヤフー株式会社とは無関係です。アカウント制限、データ消失、LINE更新による非互換などの可能性があります。重要なトークやメディアは事前にバックアップし、自己責任で使用してください。
 
@@ -13,7 +13,8 @@ root版APKと非root版LSPatchセットは[GitHub Releases](https://github.com/y
 ## 対応環境
 
 - パッケージ: `jp.naver.line.android`
-- LINE: `26.13.0` / versionCode `261300096`
+- 検証済みLINE: `26.13.0` / versionCode `261300096`
+- 未登録版: 8個の構造アンカーを検査し、5個以上一致した既知設定だけ自動適用
 - Xposed API: 101以上（target API 102）
 - 想定環境: Root + Zygisk + Vector
 - モジュールパッケージ: `dev.vector.lineextension`
@@ -66,7 +67,9 @@ LINE設定内にも拡張設定への入口を追加します。カスタムフ�
 - LINEのメインプロセス以外では通常Hookを適用しない
 - 1機能のHook登録失敗を他機能から分離
 - 同一機能が連続失敗すると、その機能だけSafe Mode
-- LINE更新時は対応表にない版へHookしない
+- LINE更新時は版名だけで全停止せず、既知設定との構造互換性を検証する
+- 構造アンカーが不足する版は全機能を停止し、誤ったHookを適用しない
+- 自動互換時もHook登録失敗は機能単位で隔離する
 - Hook登録だけでは「動作中」と表示しない
 - 診断情報へメッセージ本文や個人情報を保存しない
 - 「次回起動のみ全拡張OFF」で設定を消さず復旧可能
@@ -88,6 +91,6 @@ $env:ANDROID_HOME = 'C:\Users\name\AppData\Local\Android\Sdk'
 
 ## Tencha固有部分とライセンス
 
-製品名、管理UI、診断基盤、Safe Mode、26.13.0向け対応表、アイコンはTencha固有です。アプリ内に旧プロジェクト名や旧ロゴは表示しません。
+製品名、管理UI、診断基盤、Safe Mode、26.13.0向け対応表、自動互換リゾルバ、アイコンはTencha固有です。アプリ内に旧プロジェクト名や旧ロゴは表示しません。
 
 Hook機能の一部はGPL-3.0コードを改変しているため、法的に必要な由来は`VECTOR_NOTICE.md`へ分離して保持しています。配布物全体はGPL-3.0です。

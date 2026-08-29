@@ -8,7 +8,6 @@ import dev.vector.lineextension.core.ControlClient;
 import dev.vector.lineextension.core.FeatureSupervisor;
 import dev.vector.lineextension.core.RuntimeEnvironment;
 import dev.vector.lineextension.hooks.*;
-import dev.vector.lineextension.utils.ModuleStrings;
 import io.github.libxposed.api.XposedModule;
 import java.lang.reflect.Method;
 
@@ -45,12 +44,10 @@ public class Main extends XposedModule {
                 Context context = (Context) chain.getArg(0);
                 if (context == null) return result;
 
-                LineVersion.Config cfg = LineVersion.detectWithContext(context);
+                LineVersion.Config cfg =
+                    LineVersion.detectWithContext(context, lpparam.classLoader);
                 if (cfg == null) {
-                  cfg = LineVersion.detect(lpparam.classLoader);
-                }
-                if (cfg == null) {
-                  handleUnsupportedVersion(lpparam, context);
+                  reportUnsupportedSession(context, lpparam);
                 } else {
                   initializeModule(context, lpparam);
                 }
@@ -83,7 +80,10 @@ public class Main extends XposedModule {
           context,
           LineVersion.getDetectedVersionName(),
           lpparam.processName,
-          RuntimeEnvironment.detectLoaderMode(lpparam.classLoader));
+          RuntimeEnvironment.detectLoaderMode(lpparam.classLoader),
+          LineVersion.getCompatibilityState(),
+          LineVersion.getResolvedVersionName(),
+          LineVersion.getCompatibilityDetail());
       if (ControlClient.consumeNextLaunchOff(context)) {
         SettingsStore.setLoaded(true);
         Vector.log("Tencha: all extensions disabled for this LINE launch");
@@ -236,34 +236,20 @@ public class Main extends XposedModule {
     }
   }
 
-  private void handleUnsupportedVersion(LoadParam lpparam, Context context) {
-    final String supported = LineVersion.getSupportedVersions();
-    final String msg = ModuleStrings.UNSUPPORTED_VERSION_MSG + " (Supported: " + supported + ")";
-
-    try {
-      Method onCreate =
-          Reflect.findMethodExact(
-              "jp.naver.line.android.activity.main.MainActivity",
-              lpparam.classLoader,
-              "onCreate",
-              android.os.Bundle.class);
-      hook(onCreate)
-          .intercept(
-              chain -> {
-                Object result = chain.proceed();
-                android.app.Activity activity = (android.app.Activity) chain.getThisObject();
-                int themeId = dev.vector.lineextension.utils.LineTheme.dialogTheme(activity);
-                dev.vector.lineextension.utils.LineTheme.applyDialogColors(
-                    new android.app.AlertDialog.Builder(activity, themeId)
-                        .setTitle(ModuleStrings.UNSUPPORTED_VERSION_TITLE)
-                        .setMessage(msg)
-                        .setPositiveButton("OK", null)
-                        .show(),
-                    activity);
-                return result;
-              });
-    } catch (Throwable t) {
-      Vector.log("Tencha: unsupported-version dialog hook failed: " + t);
+  private void reportUnsupportedSession(Context context, LoadParam lpparam) {
+    synchronized (Main.class) {
+      if (SettingsStore.isLoaded()) return;
+      SettingsStore.setContext(context);
+      ControlClient.reportSession(
+          context,
+          LineVersion.getDetectedVersionName(),
+          lpparam.processName,
+          RuntimeEnvironment.detectLoaderMode(lpparam.classLoader),
+          LineVersion.getCompatibilityState(),
+          LineVersion.getResolvedVersionName(),
+          LineVersion.getCompatibilityDetail());
+      SettingsStore.setLoaded(true);
+      Vector.log("Tencha: no compatible LINE structure; all feature hooks skipped");
     }
   }
 }
