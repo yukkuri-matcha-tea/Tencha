@@ -50,6 +50,20 @@ public class FontUnlockHook implements BaseHook {
         .hook(Reflect.findMethodExact(Typeface.class, "defaultFromStyle", int.class))
         .intercept(globalHook);
 
+    // Compose and several newer LINE widgets assign their Typeface directly to Paint/
+    // TextPaint without going through TextView#setTypeface or Typeface#create.
+    try {
+      Vector.module
+          .hook(Reflect.findMethodExact(Paint.class, "setTypeface", Typeface.class))
+          .intercept(
+              chain -> {
+                if (!overrideActive || customTypeface == null) return chain.proceed();
+                return chain.proceed(new Object[] {customTypeface});
+              });
+    } catch (Throwable t) {
+      Vector.log("Tencha: Paint font hook unavailable: " + t);
+    }
+
     XposedInterface.Hooker textViewHook =
         chain -> {
           if (!overrideActive || customTypeface == null) return chain.proceed();
@@ -82,7 +96,10 @@ public class FontUnlockHook implements BaseHook {
             if (overrideActive
                 && customTypeface != null
                 && chain.getThisObject() instanceof TextView) {
-              ((TextView) chain.getThisObject()).setIncludeFontPadding(false);
+              TextView tv = (TextView) chain.getThisObject();
+              int style = tv.getTypeface() == null ? Typeface.NORMAL : tv.getTypeface().getStyle();
+              tv.setTypeface(customTypeface, style);
+              tv.setIncludeFontPadding(false);
             }
             return result;
           };

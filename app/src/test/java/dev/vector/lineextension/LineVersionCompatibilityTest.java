@@ -29,39 +29,44 @@ public class LineVersionCompatibilityTest {
 
   @Test
   public void latestVerifiedVersionUsesLiveSettingsTemplateMapping() {
-    LineVersion.Config config = LineVersion.resolveVersion("26.13.1", name -> false);
+    LineVersion.Config config = LineVersion.resolveVersion("26.14.0", name -> false);
     assertNotNull(config);
     assertEquals("exact", LineVersion.getCompatibilityState());
-    assertEquals("d68.f", config.settings.settingsAdapterClass);
-    assertEquals("g85.b", config.settings.settingsSearchHelperClass);
-    assertEquals("i35.r", config.settings.settingsHeaderItemClass);
-    assertEquals("i35.t", config.settings.settingsRowItemClass);
-    assertEquals("h35.a", config.settings.settingsAdapterWrapperClass);
-    assertEquals(0x7f0b2290, config.res.idIcon);
-    assertEquals(0x7f0b2282, config.res.idDesc);
-    assertEquals(0x7f0b22cb, config.res.idSeparator);
-    assertEquals(0x7f0b22d3, config.res.idTitle);
+    assertEquals("y78.f", config.settings.settingsAdapterClass);
+    assertEquals("ka5.b", config.settings.settingsSearchHelperClass);
+    assertEquals("m55.s", config.settings.settingsHeaderItemClass);
+    assertEquals("m55.v", config.settings.settingsRowItemClass);
+    assertEquals("l55.a", config.settings.settingsAdapterWrapperClass);
+    assertEquals(0x7f0b2275, config.res.idIcon);
+    assertEquals(0x7f0b2267, config.res.idDesc);
+    assertEquals(0x7f0b22b0, config.res.idSeparator);
+    assertEquals(0x7f0b22b8, config.res.idTitle);
+    assertEquals("n0", config.chat.searchControllerSearchBoxMethod);
+    assertEquals("f7.l", config.font.fontConfigClass);
+    assertEquals("f7.k", config.font.fontManagerClass);
+    assertEquals("f7.l$c", config.font.fontCallbackClass);
+    assertEquals("f7.n", config.font.fontRequestExecutorClass);
   }
 
   @Test
-  public void unknownVersionUsesNewestStructurallyCompatibleConfig() {
-    assertNotNull(LineVersion.resolveVersion("26.14.0", name -> true));
-    assertEquals("automatic", LineVersion.getCompatibilityState());
-    assertEquals("26.13.1", LineVersion.getResolvedVersionName());
+  public void unknownVersionFailsClosedEvenWhenOldAnchorsExist() {
+    assertNull(LineVersion.resolveVersion("26.15.0", name -> true));
+    assertEquals("unsupported", LineVersion.getCompatibilityState());
+    assertEquals("", LineVersion.getResolvedVersionName());
   }
 
   @Test
-  public void missingVersionNameCanStillUseStructuralCompatibility() {
-    assertNotNull(LineVersion.resolveVersion(null, name -> true));
-    assertEquals("automatic", LineVersion.getCompatibilityState());
-    assertEquals("26.13.1", LineVersion.getResolvedVersionName());
+  public void missingVersionNameFailsClosed() {
+    assertNull(LineVersion.resolveVersion(null, name -> true));
+    assertEquals("unsupported", LineVersion.getCompatibilityState());
+    assertEquals("", LineVersion.getResolvedVersionName());
   }
 
   @Test
   public void unknownVersionFailsClosedWithoutEnoughAnchors() {
     assertNull(
         LineVersion.resolveVersion(
-            "26.14.0", name -> "jp.naver.line.android.activity.main.MainActivity".equals(name)));
+            "26.15.0", name -> "jp.naver.line.android.activity.main.MainActivity".equals(name)));
     assertEquals("unsupported", LineVersion.getCompatibilityState());
     assertEquals("", LineVersion.getResolvedVersionName());
   }

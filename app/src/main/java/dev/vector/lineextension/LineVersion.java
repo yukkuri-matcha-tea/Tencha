@@ -586,6 +586,7 @@ public class LineVersion {
     VERSION_TABLE.put("26.11.0", dev.vector.lineextension.versions.Version26110.create());
     VERSION_TABLE.put("26.13.0", dev.vector.lineextension.versions.Version26130.create());
     VERSION_TABLE.put("26.13.1", dev.vector.lineextension.versions.Version26131.create());
+    VERSION_TABLE.put("26.14.0", dev.vector.lineextension.versions.Version26140.create());
   }
 
   private static volatile Config cachedConfig = null;
@@ -643,33 +644,9 @@ public class LineVersion {
       return exact;
     }
 
-    if (probe != null) {
-      List<String> candidates = new ArrayList<>(VERSION_TABLE.keySet());
-      candidates.sort((left, right) -> Integer.compare(versionScore(right), versionScore(left)));
-      for (String candidateVersion : candidates) {
-        Config candidate = VERSION_TABLE.get(candidateVersion);
-        int score = compatibilityScore(candidate, probe);
-        if (score >= 5) {
-          cachedConfig = candidate;
-          resolvedVersionName = candidateVersion;
-          compatibilityState = "automatic";
-          compatibilityDetail =
-              "LINE "
-                  + displayVersion(verName)
-                  + " に "
-                  + candidateVersion
-                  + " の構造を検証して自動適用 ("
-                  + score
-                  + "/8)";
-          safeLog("Tencha: " + compatibilityDetail);
-          return candidate;
-        }
-      }
-    }
-
     resolvedVersionName = "";
     compatibilityState = "unsupported";
-    compatibilityDetail = "互換構造を確認できないため全機能を停止";
+    compatibilityDetail = "未解析のLINE版のため全機能を停止";
     safeLog("Tencha: Unsupported LINE version: " + displayVersion(rawVersion));
     return null;
   }
