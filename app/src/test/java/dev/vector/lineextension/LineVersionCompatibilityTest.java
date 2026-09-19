@@ -46,6 +46,12 @@ public class LineVersionCompatibilityTest {
     assertEquals("f7.k", config.font.fontManagerClass);
     assertEquals("f7.l$c", config.font.fontCallbackClass);
     assertEquals("f7.n", config.font.fontRequestExecutorClass);
+    assertEquals(
+        "com.linecorp.line.userprofile.impl.UserProfileActivity",
+        config.profileViewer.profileActivityClass);
+    assertEquals("qm6.i", config.profileViewer.decoControllerClass);
+    assertEquals("qm6.l0", config.profileViewer.decoEditorControllerClass);
+    assertEquals("z7", config.profileViewer.methodSaveDecorations);
   }
 
   @Test

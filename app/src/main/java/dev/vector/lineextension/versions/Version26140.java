@@ -127,6 +127,36 @@ public final class Version26140 {
     v.home26NavIcon.settingsDrawableId = 0x7f081278;
     v.home26NavIcon.rendererClass = "ng2.n";
 
+    // Other-user profile viewer and the native profile-decoration editor.
+    // Verified from the 26.14.0 base APK, not inherited from an older mapping.
+    v.profileViewer.profileActivityClass = "com.linecorp.line.userprofile.impl.UserProfileActivity";
+    v.profileViewer.profileImageViewerActivityClass =
+        "jp.naver.line.android.activity.imageviewer.ImageViewerActivity";
+    v.profileViewer.coverViewerActivityClass =
+        "com.linecorp.line.userprofile.impl.covermediaviewer.CoverMediaViewerActivity";
+    v.profileViewer.decoControllerClass = "qm6.i";
+    v.profileViewer.decoEditorControllerClass = "qm6.l0";
+    v.profileViewer.decoViewModelClass =
+        "com.linecorp.line.userprofile.impl.viewmodel.deco.UserProfileDecoViewModel";
+    v.profileViewer.popupClass = "vm6.b";
+    v.profileViewer.analyticsClass = "hn6.c";
+    // Raw DEX names (JADX's default Java output aliases these to fNNNNNNx).
+    v.profileViewer.profileViewModelField = "k";
+    v.profileViewer.ownProfileField = "f";
+    v.profileViewer.controllerRendererField = "r";
+    v.profileViewer.controllerDecoViewModelField = "q";
+    v.profileViewer.editorRendererField = "n";
+    v.profileViewer.editorDecoViewModelField = "v";
+    v.profileViewer.popupBindingField = "a";
+    v.profileViewer.popupWindowField = "b";
+    v.profileViewer.bindingRootField = "a";
+    v.profileViewer.methodSetEditMode = "G7";
+    v.profileViewer.methodResetDecorations = "r7";
+    v.profileViewer.methodSelectedDecoration = "t7";
+    v.profileViewer.methodGetDecorationView = "t";
+    v.profileViewer.methodOpenDecorationEditor = "D";
+    v.profileViewer.methodSaveDecorations = "z7";
+
     return v;
   }
 }

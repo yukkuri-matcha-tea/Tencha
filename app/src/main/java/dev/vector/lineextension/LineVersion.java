@@ -59,6 +59,7 @@ public class LineVersion {
     public ImageQuality imageQuality = new ImageQuality();
     public Media media = new Media();
     public Profile profile = new Profile();
+    public ProfileViewer profileViewer = new ProfileViewer();
     public ProfileTimestamps profileTimestamps = new ProfileTimestamps();
     public AnnouncementFix announcementFix = new AnnouncementFix();
     public ChatJump chatJump = new ChatJump();
@@ -187,6 +188,32 @@ public class LineVersion {
       public String g50aClass = "";
       public String methodGetProfile = "getProfile";
       public String fieldMid = "";
+    }
+
+    public static class ProfileViewer {
+      public String profileActivityClass = "";
+      public String profileImageViewerActivityClass = "";
+      public String coverViewerActivityClass = "";
+      public String decoControllerClass = "";
+      public String decoEditorControllerClass = "";
+      public String decoViewModelClass = "";
+      public String popupClass = "";
+      public String analyticsClass = "";
+      public String profileViewModelField = "";
+      public String ownProfileField = "";
+      public String controllerRendererField = "";
+      public String controllerDecoViewModelField = "";
+      public String editorRendererField = "";
+      public String editorDecoViewModelField = "";
+      public String popupBindingField = "";
+      public String popupWindowField = "";
+      public String bindingRootField = "";
+      public String methodSetEditMode = "";
+      public String methodResetDecorations = "";
+      public String methodSelectedDecoration = "";
+      public String methodGetDecorationView = "";
+      public String methodOpenDecorationEditor = "";
+      public String methodSaveDecorations = "";
     }
 
     public static class ProfileTimestamps {

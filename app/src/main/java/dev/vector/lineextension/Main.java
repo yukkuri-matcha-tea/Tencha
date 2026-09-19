@@ -153,6 +153,9 @@ public class Main extends XposedModule {
       if (developerMode && options.showProfileTimestamps.enabled) {
         applyHook(new ProfileTimestampsHook(), lpparam);
       }
+      if (options.enhanceOtherProfiles.enabled) {
+        applyHook(new OtherProfileViewerHook(), lpparam);
+      }
 
       if (options.removeAds.enabled) {
         applyHook(new RemoveAds(), lpparam);

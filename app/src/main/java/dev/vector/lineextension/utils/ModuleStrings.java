@@ -111,6 +111,15 @@ public class ModuleStrings {
   public static final String OPT_SHOW_PROFILE_TIMESTAMPS_LABEL = "プロフィールに詳細情報を表示";
   public static final String OPT_SHOW_PROFILE_TIMESTAMPS_DESC =
       "友だちのプロフィール画面の右上にⓘアイコンを追加します。タップすると、MID・友だち追加・お気に入り登録・プロフィール更新の日時をダイアログで表示します。記録がない項目は「—」と表示されます。";
+  public static final String OPT_OTHER_PROFILE_VIEWER_LABEL = "他人のプロフィール閲覧を拡張";
+  public static final String OPT_OTHER_PROFILE_VIEWER_DESC =
+      "他人のプロフィール画像・背景・配置画像を拡大して保存できます。オブジェクト閲覧モードでは配置を端末上だけで移動・拡大縮小・回転できます。";
+  public static final String PROFILE_OBJECT_MODE = "オブジェクト閲覧モード";
+  public static final String PROFILE_OBJECT_MODE_END = "閲覧を終了";
+  public static final String PROFILE_IMAGE_VIEW = "画像を表示";
+  public static final String PROFILE_IMAGE_SAVE = "保存";
+  public static final String PROFILE_IMAGE_SAVED = "画像をPictures/Tenchaへ保存しました";
+  public static final String PROFILE_IMAGE_SAVE_FAILED = "画像を保存できませんでした";
   public static final String PROFILE_TS_FRIEND_CREATED = "友だち追加";
   public static final String PROFILE_TS_FAVORITE = "お気に入り";
   public static final String PROFILE_TS_PROFILE_UPDATED = "プロフ更新";
