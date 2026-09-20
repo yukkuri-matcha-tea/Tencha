@@ -1,5 +1,6 @@
 package dev.vector.lineextension
 
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -7,23 +8,21 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,33 +30,20 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -68,37 +54,27 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.Saver
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import dev.vector.lineextension.core.ControlClient
-import dev.vector.lineextension.core.FeatureStatus
 import dev.vector.lineextension.core.GitHubUpdater
 import dev.vector.lineextension.core.RuntimeEnvironment
-import dev.vector.lineextension.core.TenchaBackup
 import java.text.DateFormat
-import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 
 class VectorMainActivity : ComponentActivity() {
   private val resumeGeneration = mutableIntStateOf(0)
@@ -106,7 +82,7 @@ class VectorMainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
-    setContent { VectorTheme { VectorApp(resumeGeneration.intValue) } }
+    setContent { VectorTheme { TenchaApp(resumeGeneration.intValue) } }
   }
 
   override fun onResume() {
@@ -129,14 +105,6 @@ private fun VectorTheme(content: @Composable () -> Unit) {
   MaterialTheme(colorScheme = scheme, content = content)
 }
 
-private enum class Screen { HOME, SETTINGS, DIAGNOSTICS, ABOUT, ROOTLESS }
-
-private val ScreenSaver =
-  Saver<Screen, String>(
-    save = { it.name },
-    restore = { name -> Screen.entries.firstOrNull { it.name == name } ?: Screen.HOME },
-  )
-
 private const val UPDATE_CHECK_PREFS = "tencha_update_check"
 private const val UPDATE_LAST_CHECKED_AT = "last_checked_at"
 private const val UPDATE_CHECKED_APP_VERSION = "checked_app_version"
@@ -144,108 +112,61 @@ private const val UPDATE_AVAILABLE = "update_available"
 private const val UPDATE_AVAILABLE_VERSION = "available_version"
 private const val UPDATE_CHECK_INTERVAL_MS = 24L * 60L * 60L * 1000L
 
-private data class FeatureRow(val id: String, val title: String, val fallback: String)
-
-private sealed interface FeatureListEntry {
-  val stableKey: String
-
-  data class CategoryHeader(val category: VectorConfig.Category, val count: Int) : FeatureListEntry {
-    override val stableKey = "category-${category.name}"
-  }
-
-  data class Option(val item: VectorConfig.Item) : FeatureListEntry {
-    override val stableKey = "option-${item.key}"
-  }
-}
-
-internal fun matchesFeatureFilter(
-  label: String,
-  description: String,
-  query: String,
-  enabled: Boolean,
-  experimental: Boolean,
-  enabledOnly: Boolean,
-  experimentalOnly: Boolean,
-): Boolean {
-  val normalizedQuery = query.trim()
-  val matchesQuery =
-    normalizedQuery.isEmpty() ||
-      label.contains(normalizedQuery, ignoreCase = true) ||
-      description.contains(normalizedQuery, ignoreCase = true)
-  return matchesQuery && (!experimentalOnly || experimental) && (!enabledOnly || enabled)
-}
-
-internal fun shouldShowRootlessSetup(hasConnected: Boolean, hasRootEvidence: Boolean): Boolean =
-  !hasConnected && !hasRootEvidence
+internal fun currentConnectionReported(
+  lastSeen: Long,
+  reportedLineVersion: String,
+  installedLineVersion: String?,
+  tenchaUpdatedAt: Long,
+  lineUpdatedAt: Long,
+  compatibilityState: String,
+): Boolean =
+  lastSeen > 0L &&
+    installedLineVersion != null &&
+    reportedLineVersion == installedLineVersion &&
+    lastSeen >= maxOf(tenchaUpdatedAt, lineUpdatedAt) &&
+    compatibilityState != "unsupported"
 
 internal fun runtimeModeLabel(mode: String, reported: Boolean): String =
   when (mode) {
     RuntimeEnvironment.MODE_ROOT -> "Vector経由で動作中（root）"
     RuntimeEnvironment.MODE_LSPATCH -> "LSPatch経由で動作中（非root）"
-    else ->
-      if (reported) {
-        "接続済み（実行方式を判定できません）"
-      } else {
-        "LINE再起動後に実行方式を表示"
-      }
+    else -> if (reported) "接続済み（実行方式を判定できません）" else "LINE再起動後に実行方式を表示"
   }
 
-internal fun compatibilityLabel(state: String, resolvedVersion: String): String =
-  when (state) {
-    "exact" -> "正式対応"
-    "automatic" -> if (resolvedVersion.isBlank()) "自動互換" else "自動互換（$resolvedVersion 構成）"
-    "unsupported" -> "互換性なし・全機能停止"
-    else -> "未確認"
-  }
-
-private val visibleFeatures =
-  listOf(
-    FeatureRow("read_block", "既読", "無効"),
-    FeatureRow("unsend_retention", "送信取消", "無効"),
-    FeatureRow("message_seconds", "メッセージ", "無効"),
-    FeatureRow("external_browser", "ブラウザ", "無効"),
-    FeatureRow("media_quality", "メディア", "無効"),
-    FeatureRow("search_enhancement", "検索", "無効"),
-    FeatureRow("ad_removal", "広告・おすすめ", "無効"),
-    FeatureRow("tab_customizer", "タブ・UI", "無効"),
-    FeatureRow("agenti_hider", "AgentI", "無効"),
-    FeatureRow("custom_font", "外観", "無効"),
-    FeatureRow("fcm_fix", "通知", "無効"),
-    FeatureRow("line_settings_ui", "LINE内設定", "確認中"),
-  )
-
-private val restartRequiredKeys =
-  setOf(
-    "prevent_mark_as_read", "temporary_read_block", "per_chat_read_block", "record_read_history", "prevent_unsend_message",
-    "show_seconds_in_chat_time", "open_url_in_default_browser", "high_quality_photo",
-    "long_video", "search_by_member", "search_min_1_char", "hide_ai_icon_permanently",
-    "remove_ads", "use_custom_font", "experimental_fcm_fix", "developer_mode",
-  )
-
-private val experimentalKeys =
-  setOf(
-    "experimental_fcm_fix", "fcm_force_registration", "line_foreground_keep_alive",
-    "spoof_version", "spoof_version_unsend_only", "fix_signature_mismatch", "long_video",
-  )
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun VectorApp(resumeGeneration: Int) {
+private fun TenchaApp(resumeGeneration: Int) {
   val context = LocalContext.current
+  val scope = rememberCoroutineScope()
   val snackbar = remember { SnackbarHostState() }
-  var screen by rememberSaveable(stateSaver = ScreenSaver) { mutableStateOf(Screen.HOME) }
   var snapshot by remember { mutableStateOf(ControlClient.snapshot(context)) }
-  var settings by remember { mutableStateOf(ControlClient.settingsSnapshot(context)) }
-  val hasRootEvidence = remember { RuntimeEnvironment.hasRootEvidence(context) }
-  val updatePrefs = remember { context.getSharedPreferences(UPDATE_CHECK_PREFS, android.content.Context.MODE_PRIVATE) }
+  val linePackage = remember(resumeGeneration) { packageInfoOrNull(context.packageManager, "jp.naver.line.android") }
+  val tenchaPackage = remember(resumeGeneration) { packageInfoOrNull(context.packageManager, context.packageName) }
+  val lineVersion = linePackage?.versionName
+  val lastSeen = snapshot.getLong("lastLineSeen", 0L)
+  val connected = currentConnectionReported(
+    lastSeen,
+    snapshot.getString("lineVersion", ""),
+    lineVersion,
+    tenchaPackage?.lastUpdateTime ?: 0L,
+    linePackage?.lastUpdateTime ?: 0L,
+    snapshot.getString("compatibilityState", "unknown"),
+  )
+  val updatePrefs = remember { context.getSharedPreferences(UPDATE_CHECK_PREFS, Context.MODE_PRIVATE) }
   var updateAvailable by remember {
     mutableStateOf(
       updatePrefs.getString(UPDATE_CHECKED_APP_VERSION, null) == BuildConfig.VERSION_NAME &&
         updatePrefs.getBoolean(UPDATE_AVAILABLE, false),
     )
   }
+  var availableVersion by remember { mutableStateOf(updatePrefs.getString(UPDATE_AVAILABLE_VERSION, null)) }
+  var downloadedApk by remember { mutableStateOf<java.io.File?>(null) }
+  var updateStatus by remember { mutableStateOf<String?>(null) }
+  var updateBusy by remember { mutableStateOf(false) }
 
   fun recordUpdateResult(available: Boolean, version: String?) {
     updateAvailable = available
+    availableVersion = version
     updatePrefs.edit {
       putLong(UPDATE_LAST_CHECKED_AT, System.currentTimeMillis())
       putString(UPDATE_CHECKED_APP_VERSION, BuildConfig.VERSION_NAME)
@@ -254,693 +175,127 @@ private fun VectorApp(resumeGeneration: Int) {
     }
   }
 
+  LaunchedEffect(resumeGeneration) { snapshot = ControlClient.snapshot(context) }
   LaunchedEffect(Unit) {
     val now = System.currentTimeMillis()
     val lastCheckedAt = updatePrefs.getLong(UPDATE_LAST_CHECKED_AT, 0L)
-    val checkedAppVersion = updatePrefs.getString(UPDATE_CHECKED_APP_VERSION, null)
-    val checkDue =
-      checkedAppVersion != BuildConfig.VERSION_NAME ||
-        lastCheckedAt <= 0L ||
-        now - lastCheckedAt >= UPDATE_CHECK_INTERVAL_MS
-    if (checkDue) {
+    val checkedVersion = updatePrefs.getString(UPDATE_CHECKED_APP_VERSION, null)
+    if (checkedVersion != BuildConfig.VERSION_NAME || lastCheckedAt <= 0L || now - lastCheckedAt >= UPDATE_CHECK_INTERVAL_MS) {
       updatePrefs.edit {
         putLong(UPDATE_LAST_CHECKED_AT, now)
         putString(UPDATE_CHECKED_APP_VERSION, BuildConfig.VERSION_NAME)
-        if (checkedAppVersion != BuildConfig.VERSION_NAME) {
+        if (checkedVersion != BuildConfig.VERSION_NAME) {
           putBoolean(UPDATE_AVAILABLE, false)
           remove(UPDATE_AVAILABLE_VERSION)
         }
       }
       runCatching { withContext(Dispatchers.IO) { GitHubUpdater.checkLatest() } }
-        .onSuccess { latest -> recordUpdateResult(latest.isNewerThanCurrent, latest.version) }
+        .onSuccess { recordUpdateResult(it.isNewerThanCurrent, it.version) }
     }
   }
 
-  fun refresh() {
-    snapshot = ControlClient.snapshot(context)
-    settings = ControlClient.settingsSnapshot(context)
-  }
-
-  LaunchedEffect(resumeGeneration) { refresh() }
-
-  key(screen) {
-    when (screen) {
-      Screen.HOME -> DashboardScreen(snapshot, ::refresh, { screen = it; refresh() }, snackbar, updateAvailable)
-      Screen.SETTINGS -> SettingsScreen(settings, { settings = ControlClient.settingsSnapshot(context) }, { screen = it; refresh() }, snackbar, updateAvailable)
-      Screen.DIAGNOSTICS -> DiagnosticsScreen(snapshot, ::refresh, { screen = it; refresh() }, snackbar, updateAvailable)
-      Screen.ABOUT ->
-        AboutScreen(
-          { screen = it },
-          snackbar,
-          updateAvailable,
-          ::recordUpdateResult,
-          shouldShowRootlessSetup(snapshot.getLong("lastLineSeen", 0L) > 0L, hasRootEvidence),
-        )
-      Screen.ROOTLESS -> RootlessSetupScreen({ screen = Screen.ABOUT }, snackbar)
-    }
-  }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DashboardScreen(
-  snapshot: Bundle,
-  onRefresh: () -> Unit,
-  onNavigate: (Screen) -> Unit,
-  snackbar: SnackbarHostState,
-  updateAvailable: Boolean,
-) {
-  val context = LocalContext.current
-  val scope = rememberCoroutineScope()
-  val lineVersion = remember { installedLineVersion(context.packageManager) }
-  val lastSeen = snapshot.getLong("lastLineSeen", 0L)
-  val connected = lastSeen > 0L
-  val loaderMode = snapshot.getString("loaderMode", RuntimeEnvironment.MODE_UNKNOWN)
-  val loaderModeReported = snapshot.getBoolean("loaderModeReported", false)
-  val compatibilityState = snapshot.getString("compatibilityState", "unknown")
-  val resolvedVersion = snapshot.getString("resolvedVersion", "")
-  val compatibilityDetail = snapshot.getString("compatibilityDetail", "")
-  var nextLaunchOff by remember(snapshot) { mutableStateOf(snapshot.getBoolean("nextLaunchOff", false)) }
-  val featureStates = visibleFeatures.map { it to snapshot.getBundle("feature.${it.id}") }
-  val workingCount = featureStates.count { (_, state) -> state?.getString("status") == FeatureStatus.WORKING.name }
-  val issueCount = featureStates.count { (_, state) ->
-    state?.getString("status") == FeatureStatus.HOOK_FAILED.name ||
-      state?.getString("status") == FeatureStatus.SAFE_MODE.name
-  }
-
-  Scaffold(
-    topBar = {
-      TopAppBar(
-        title = { Text("Tencha") },
-        actions = { TextButton(onClick = onRefresh) { Text("更新") } },
-      )
-    },
-    bottomBar = { TenchaNavigationBar(Screen.HOME, onNavigate, updateAvailable) },
-    snackbarHost = { SnackbarHost(snackbar) },
-  ) { inner ->
-    LazyColumn(
-      modifier = Modifier.fillMaxSize().padding(inner),
-      contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      item {
-        val containerColor by animateColorAsState(
-          if (connected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
-          animationSpec = tween(300),
-          label = "Connection background",
-        )
-        val contentColor by animateColorAsState(
-          if (connected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
-          animationSpec = tween(300),
-          label = "Connection content",
-        )
-        Card(colors = CardDefaults.cardColors(containerColor = containerColor, contentColor = contentColor)) {
-          Row(
-            modifier = Modifier.fillMaxWidth().padding(20.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Box(Modifier.size(16.dp).background(if (connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, CircleShape))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-              Text(
-                if (connected) "LINEに接続済み" else "LINEに未接続",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold,
-              )
-              if (connected) {
-                Text(
-                  runtimeModeLabel(loaderMode, loaderModeReported),
-                  style = MaterialTheme.typography.bodyLarge,
-                  fontWeight = FontWeight.Medium,
-                )
-              }
-              Text(
-                if (connected) "最終接続 ${formatTime(lastSeen)}" else "VectorでTenchaを有効にしてLINEを再起動してください",
-                style = if (connected) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodyMedium,
-              )
-            }
-          }
-        }
-      }
-      item {
-        Card {
-          Column {
-            ListItem(
-              headlineContent = { Text("LINE") },
-              trailingContent = { Text(lineVersion ?: "未導入", style = MaterialTheme.typography.labelLarge) },
-            )
-            ListItem(
-              headlineContent = { Text("Tencha") },
-              trailingContent = { Text(BuildConfig.VERSION_NAME, style = MaterialTheme.typography.labelLarge) },
-            )
-            ListItem(
-              headlineContent = { Text("LINE互換性") },
-              supportingContent = {
-                compatibilityDetail.takeIf { it.isNotBlank() }?.let {
-                  Text(it, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                }
-              },
-              trailingContent = {
-                Text(
-                  compatibilityLabel(compatibilityState, resolvedVersion),
-                  style = MaterialTheme.typography.labelLarge,
-                  color = if (compatibilityState == "unsupported") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                )
-              },
-            )
-            ListItem(
-              headlineContent = { Text("動作中の機能") },
-              trailingContent = { Text("$workingCount / ${visibleFeatures.size}", style = MaterialTheme.typography.labelLarge) },
-            )
-          }
-        }
-      }
-      item {
-        SectionTitle("機能の状態")
-        Text(
-          if (issueCount == 0) "問題は見つかっていません" else "$issueCount 件の確認が必要です",
-          style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-      }
-      item {
-        Card {
-          Column {
-            featureStates.forEachIndexed { index, (feature, state) ->
-              val statusName = state?.getString("status")
-              val label = FeatureStatus.entries.firstOrNull { it.name == statusName }?.label ?: feature.fallback
-              ListItem(
-                colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = Color.Transparent),
-                headlineContent = { Text(feature.title, fontWeight = FontWeight.Medium) },
-                supportingContent = { state?.getString("detail").orEmpty().takeIf { it.isNotBlank() }?.let { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
-                leadingContent = { StatusDot(label) },
-                trailingContent = { StatusText(label) },
-              )
-              if (index != featureStates.lastIndex) HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            }
-          }
-        }
-      }
-      item { SectionTitle("クイック復旧") }
-      item {
-        Card {
-          ListItem(
-            colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = Color.Transparent),
-            headlineContent = { Text("次回起動のみ全拡張OFF") },
-            supportingContent = { Text("設定を消さず、次のLINE起動だけHookを適用しません") },
-            trailingContent = {
-              Switch(
-                checked = nextLaunchOff,
-                onCheckedChange = { checked ->
-                  val ok = ControlClient.setNextLaunchOff(context, checked)
-                  if (ok) nextLaunchOff = checked
-                  scope.launch { snackbar.showSnackbar(if (ok) if (checked) "次回起動のみOFFを予約しました" else "予約を解除しました" else "変更に失敗しました") }
-                },
-              )
-            },
-          )
-        }
-      }
-      item {
-        Button(
-          modifier = Modifier.fillMaxWidth(),
-          enabled = lineVersion != null,
-          onClick = { context.packageManager.getLaunchIntentForPackage("jp.naver.line.android")?.let { context.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } },
-        ) { Text("LINEを開く") }
-      }
-      item {
-        Text("設定変更後はLINEを完全終了して再起動してください。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(4.dp))
-      }
-    }
-  }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SettingsScreen(
-  settings: Bundle,
-  onSettingsChanged: () -> Unit,
-  onNavigate: (Screen) -> Unit,
-  snackbar: SnackbarHostState,
-  updateAvailable: Boolean,
-) {
-  val context = LocalContext.current
-  val scope = rememberCoroutineScope()
-  val config = remember { VectorConfig() }
-  val boolKeys = settings.getStringArrayList("booleanKeys").orEmpty().toSet()
-  val developerModeEnabled =
-    if (boolKeys.contains("developer_mode")) settings.getBoolean("bool.developer_mode", false) else false
-  var showResetDialog by remember { mutableStateOf(false) }
-  var showBlockedChatsDialog by remember { mutableStateOf(false) }
-  var showRestoreDialog by remember { mutableStateOf(false) }
-  var searchQuery by rememberSaveable { mutableStateOf("") }
-  var enabledOnly by rememberSaveable { mutableStateOf(false) }
-  var experimentalOnly by rememberSaveable { mutableStateOf(false) }
-
-  fun isEnabled(option: VectorConfig.Item): Boolean =
-    if (boolKeys.contains(option.key)) settings.getBoolean("bool.${option.key}", option.enabled) else option.enabled
-
-  val featureListEntries = buildList {
-    VectorConfig.Category.entries.forEach { category ->
-      val options = config.items.filter { option ->
-        val developerVisible = category != VectorConfig.Category.DEVELOPER || option.key == "developer_mode" || developerModeEnabled
-        option.category == category &&
-          developerVisible &&
-          matchesFeatureFilter(
-            label = option.label,
-            description = option.description,
-            query = searchQuery,
-            enabled = isEnabled(option),
-            experimental = experimentalKeys.contains(option.key),
-            enabledOnly = enabledOnly,
-            experimentalOnly = experimentalOnly,
-          )
-      }
-      if (options.isNotEmpty()) {
-        add(FeatureListEntry.CategoryHeader(category, options.size))
-        options.forEach { add(FeatureListEntry.Option(it)) }
-      }
-    }
-  }
-  val visibleOptionCount = featureListEntries.count { it is FeatureListEntry.Option }
-
-  val createBackup =
-    rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
-      if (uri != null) {
-        scope.launch {
-          val result = withContext(Dispatchers.IO) { runCatching { TenchaBackup.exportTo(context, uri) } }
-          snackbar.showSnackbar(if (result.isSuccess) "バックアップを保存しました" else "バックアップに失敗しました: ${result.exceptionOrNull()?.message.orEmpty()}")
-        }
-      }
-    }
-  val restoreBackup =
-    rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-      if (uri != null) {
-        scope.launch {
-          val result = withContext(Dispatchers.IO) { runCatching { TenchaBackup.restoreFrom(context, uri) } }
-          if (result.isSuccess) onSettingsChanged()
-          snackbar.showSnackbar(if (result.isSuccess) "復元しました。LINEを再起動してください" else "復元に失敗しました: ${result.exceptionOrNull()?.message.orEmpty()}")
-        }
-      }
-    }
-
-  val blockedChats = remember(settings) {
-    runCatching { JSONObject(settings.getString("string.read_blocked_chats_json", "{}")) }
-      .getOrElse { JSONObject() }
-  }
-
-  if (showBlockedChatsDialog) {
-    AlertDialog(
-      onDismissRequest = { showBlockedChatsDialog = false },
-      title = { Text("既読回避中のトーク") },
-      text = {
-        val ids = blockedChats.keys().asSequence().toList()
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-          if (ids.isEmpty()) {
-            Text("登録はありません。LINEのチャット上部にある本アイコンを長押しすると追加できます。")
-          } else {
-            ids.take(12).forEach { chatId ->
-              val name = blockedChats.optJSONObject(chatId)?.optString("name", chatId) ?: chatId
-              ListItem(
-                headlineContent = { Text(name) },
-                supportingContent = { Text(chatId, maxLines = 1) },
-                trailingContent = {
-                  TextButton(onClick = {
-                    blockedChats.remove(chatId)
-                    val ok = ControlClient.putSetting(context, "read_blocked_chats_json", blockedChats.toString())
-                    if (ok) onSettingsChanged()
-                    scope.launch { snackbar.showSnackbar(if (ok) "既読回避から削除しました" else "削除に失敗しました") }
-                  }) { Text("削除") }
-                },
-              )
-            }
-            if (ids.size > 12) Text("ほか ${ids.size - 12} 件")
-          }
-        }
-      },
-      confirmButton = { TextButton(onClick = { showBlockedChatsDialog = false }) { Text("閉じる") } },
-    )
-  }
-
-  if (showRestoreDialog) {
-    AlertDialog(
-      onDismissRequest = { showRestoreDialog = false },
-      title = { Text("バックアップを復元しますか？") },
-      text = { Text("現在のTencha設定と履歴を、選択したバックアップの内容で置き換えます。") },
-      confirmButton = {
-        TextButton(onClick = {
-          showRestoreDialog = false
-          restoreBackup.launch(arrayOf("application/zip", "application/octet-stream"))
-        }) { Text("ファイルを選択") }
-      },
-      dismissButton = { TextButton(onClick = { showRestoreDialog = false }) { Text("キャンセル") } },
-    )
-  }
-
-  if (showResetDialog) {
-    AlertDialog(
-      onDismissRequest = { showResetDialog = false },
-      title = { Text("全設定を初期化しますか？") },
-      text = { Text("機能設定のみ初期値へ戻します。履歴データは削除しません。") },
-      confirmButton = {
-        TextButton(onClick = {
-          ControlClient.resetSettings(context); onSettingsChanged(); showResetDialog = false
-          scope.launch { snackbar.showSnackbar("設定を初期化しました。LINEを再起動してください") }
-        }) { Text("初期化") }
-      },
-      dismissButton = { TextButton(onClick = { showResetDialog = false }) { Text("キャンセル") } },
-    )
-  }
-
-  Scaffold(
-    topBar = {
-      TopAppBar(
-        title = { Text("機能設定") },
-        actions = { TextButton(onClick = { showResetDialog = true }) { Text("初期化") } },
-      )
-    },
-    bottomBar = { TenchaNavigationBar(Screen.SETTINGS, onNavigate, updateAvailable) },
-    snackbarHost = { SnackbarHost(snackbar) },
-  ) { inner ->
-    LazyColumn(
-      modifier = Modifier.fillMaxSize().padding(inner),
-      contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-      verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-      item {
-        ElevatedCard {
-          Column(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-          ) {
-            Text("機能を探す", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            OutlinedTextField(
-              value = searchQuery,
-              onValueChange = { searchQuery = it },
-              modifier = Modifier.fillMaxWidth(),
-              label = { Text("検索") },
-              placeholder = { Text("機能名または説明") },
-              singleLine = true,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-              FilterChip(
-                selected = enabledOnly,
-                onClick = { enabledOnly = !enabledOnly },
-                label = { Text("有効のみ") },
-              )
-              FilterChip(
-                selected = experimentalOnly,
-                onClick = { experimentalOnly = !experimentalOnly },
-                label = { Text("実験的のみ") },
-              )
-            }
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              AnimatedContent(
-                targetState = visibleOptionCount,
-                transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(100)) },
-                label = "Feature result count",
-              ) { count ->
-                Text("$count 件", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-              }
-              AnimatedVisibility(
-                visible = searchQuery.isNotBlank() || enabledOnly || experimentalOnly,
-                enter = fadeIn(tween(160)),
-                exit = fadeOut(tween(100)),
-              ) {
-                TextButton(onClick = {
-                  searchQuery = ""
-                  enabledOnly = false
-                  experimentalOnly = false
-                }) { Text("絞り込みを解除") }
-              }
-            }
-          }
-        }
-      }
-      item {
-        Card {
-          ListItem(
-            headlineContent = { Text("既読回避中のトークを管理") },
-            supportingContent = { Text("登録 ${blockedChats.length()} 件") },
-            trailingContent = { TextButton(onClick = { showBlockedChatsDialog = true }) { Text("管理") } },
-          )
-        }
-      }
-      item {
-        Card {
-          Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("バックアップ", style = MaterialTheme.typography.titleMedium)
-            Text("設定・履歴・トーク履歴を端末またはGoogle Driveへ保存します。", style = MaterialTheme.typography.bodyMedium)
-            Text("履歴を含むため、共有には注意してください。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-              FilledTonalButton(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                  val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-                  createBackup.launch("Tencha-backup-$stamp.tencha.zip")
-                },
-              ) { Text("バックアップ") }
-              OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = { showRestoreDialog = true }) { Text("復元") }
-            }
-          }
-        }
-      }
-      items(featureListEntries, key = { it.stableKey }) { entry ->
-        when (entry) {
-          is FeatureListEntry.CategoryHeader -> SectionTitle(entry.category.label, entry.count)
-          is FeatureListEntry.Option -> {
-            val option = entry.item
-            val checked = isEnabled(option)
-            val dependencyEnabled = option.disabledWhenEnabledKey?.let { dependency ->
-              val defaultValue = config.items.firstOrNull { it.key == dependency }?.enabled ?: false
-              !(if (boolKeys.contains(dependency)) settings.getBoolean("bool.$dependency", defaultValue) else defaultValue)
-            } ?: true
-            val experimental = experimentalKeys.contains(option.key)
-            val containerColor by animateColorAsState(
-              targetValue = if (checked) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f) else MaterialTheme.colorScheme.surfaceContainerLow,
-              animationSpec = tween(220),
-              label = "Feature card color",
-            )
-            Card(colors = CardDefaults.cardColors(containerColor = containerColor)) {
-              ListItem(
-                colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = Color.Transparent),
-                headlineContent = { Text(option.label, fontWeight = FontWeight.Medium) },
-                supportingContent = {
-                  Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (option.description.isNotBlank()) Text(option.description)
-                    if (experimental) {
-                      Badge(
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                      ) {
-                        Text("実験的", modifier = Modifier.padding(horizontal = 4.dp))
-                      }
-                    }
-                    if (option.key == "custom_font_path") Text("フォント選択はLINE内の拡張設定から行います")
-                    if (option.key == "home_tab_type") Text("ホーム種別の選択はLINE内の拡張設定から行います")
-                    if (option.key == "fcm_fix_mode") Text("FCM方式の選択はLINE内の拡張設定から行います")
-                  }
-                },
-                trailingContent = {
-                  if (option.key != "custom_font_path" && option.key != "home_tab_type" && option.key != "fcm_fix_mode") {
-                    Switch(
-                      checked = checked, enabled = dependencyEnabled,
-                      onCheckedChange = { enabled ->
-                        val ok = ControlClient.putSetting(context, option.key, enabled)
-                        if (ok) onSettingsChanged()
-                        scope.launch { snackbar.showSnackbar(if (ok) if (restartRequiredKeys.contains(option.key)) "保存しました。LINE再起動後に反映します" else "保存しました" else "保存に失敗しました") }
-                      },
-                    )
-                  }
-                },
-              )
-            }
-          }
-        }
-      }
-      item(key = "empty-feature-state") {
-        AnimatedVisibility(
-          visible = visibleOptionCount == 0,
-          enter = fadeIn(tween(160)),
-          exit = fadeOut(tween(100)),
-        ) {
-          Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-            Column(
-              modifier = Modifier.fillMaxWidth().padding(24.dp),
-              horizontalAlignment = Alignment.CenterHorizontally,
-              verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-              Text("一致する機能がありません", style = MaterialTheme.typography.titleMedium)
-              Text("検索語や絞り込みを変更してください", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-          }
-        }
-      }
-      item { Spacer(Modifier.height(12.dp)) }
-    }
-  }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DiagnosticsScreen(
-  snapshot: Bundle,
-  onRefresh: () -> Unit,
-  onNavigate: (Screen) -> Unit,
-  snackbar: SnackbarHostState,
-  updateAvailable: Boolean,
-) {
-  val context = LocalContext.current
-  val scope = rememberCoroutineScope()
-  val ids = snapshot.getStringArrayList("featureIds").orEmpty().sorted()
-  val compatibilityState = snapshot.getString("compatibilityState", "unknown")
-  val resolvedVersion = snapshot.getString("resolvedVersion", "")
-  val compatibilityDetail = snapshot.getString("compatibilityDetail", "")
-  Scaffold(
-    topBar = { TopAppBar(title = { Text("診断・復旧") }, actions = { TextButton(onClick = onRefresh) { Text("更新") } }) },
-    bottomBar = { TenchaNavigationBar(Screen.DIAGNOSTICS, onNavigate, updateAvailable) },
-    snackbarHost = { SnackbarHost(snackbar) },
-  ) { inner ->
-    LazyColumn(
-      modifier = Modifier.fillMaxSize().padding(inner),
-      contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-      verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-      item {
-        Card {
-          ListItem(
-            headlineContent = { Text("LINE互換性: ${compatibilityLabel(compatibilityState, resolvedVersion)}") },
-            supportingContent = {
-              Text(
-                compatibilityDetail.ifBlank { "LINEを再起動すると互換性を検証します" },
-              )
-            },
-            trailingContent = {
-              StatusText(
-                when (compatibilityState) {
-                  "exact" -> "対応済み"
-                  "automatic" -> "自動互換"
-                  "unsupported" -> "互換性なし"
-                  else -> "未確認"
-                },
-              )
-            },
-          )
-        }
-      }
-      item {
-        Card {
-          Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("障害復旧", style = MaterialTheme.typography.titleMedium)
-            Text("Hook登録に連続失敗した機能を停止します。")
-            OutlinedButton(onClick = {
-              val ok = ControlClient.clearAllSafeModes(context); onRefresh()
-              scope.launch { snackbar.showSnackbar(if (ok) "Safe Modeを解除しました" else "解除に失敗しました") }
-            }) { Text("すべてのSafe Modeを解除") }
-          }
-        }
-      }
-      item { SectionTitle("Hook状態") }
-      if (ids.isEmpty()) {
-        item { Text("実行記録がありません。VectorでTenchaを有効化してLINEを起動してください。") }
-      } else {
-        items(ids, key = { it }) { id ->
-          val state = snapshot.getBundle("feature.$id") ?: Bundle.EMPTY
-          val status = FeatureStatus.entries.firstOrNull { it.name == state.getString("status") }?.label ?: "不明"
-          ListItem(
-            headlineContent = { Text(id) },
-            supportingContent = {
-              Column {
-                state.getString("detail", "").takeIf { it.isNotBlank() }?.let { Text(it) }
-                Text("連続失敗 ${state.getInt("failures", 0)} / 最終成功 ${formatTime(state.getLong("lastSuccess", 0L))}", style = MaterialTheme.typography.bodySmall)
-              }
-            },
-            trailingContent = { StatusText(status) },
-          )
-        }
-      }
-      item { Text("実行を確認できた機能だけ「動作中」と表示します。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-    }
-  }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AboutScreen(
-  onNavigate: (Screen) -> Unit,
-  snackbar: SnackbarHostState,
-  updateAvailable: Boolean,
-  onUpdateResult: (Boolean, String?) -> Unit,
-  showRootlessSetup: Boolean,
-) {
-  val context = LocalContext.current
-  val scope = rememberCoroutineScope()
-  var downloadedApk by remember { mutableStateOf<java.io.File?>(null) }
-  var updateStatus by remember { mutableStateOf<String?>(null) }
-  var updateBusy by remember { mutableStateOf(false) }
   val installPermissionLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-      val readyApk = downloadedApk
-      when {
-        readyApk == null || !readyApk.isFile -> {
-          updateStatus = "ダウンロード済みAPKが見つかりません"
-        }
-        !GitHubUpdater.canRequestInstall(context) -> {
-          updateStatus = "インストールの許可が必要です"
-          scope.launch { snackbar.showSnackbar("Tenchaからのアプリインストールを許可してください") }
-        }
-        else -> {
-          runCatching { GitHubUpdater.launchInstaller(context, readyApk) }
-            .onSuccess { updateStatus = "インストーラーを開きました" }
-            .onFailure {
-              updateStatus = "インストーラーを開けませんでした"
-              scope.launch { snackbar.showSnackbar("インストーラーを開けません: ${it.message.orEmpty()}") }
-            }
-        }
+      val apk = downloadedApk
+      if (apk == null || !apk.isFile) {
+        updateStatus = "ダウンロード済みAPKが見つかりません"
+      } else if (!GitHubUpdater.canRequestInstall(context)) {
+        updateStatus = "Tenchaからのアプリインストールを許可してください"
+      } else {
+        runCatching { GitHubUpdater.launchInstaller(context, apk) }
+          .onSuccess { updateStatus = "インストーラーを開きました" }
+          .onFailure { updateStatus = "インストーラーを開けませんでした" }
       }
     }
+
   Scaffold(
-    topBar = { TopAppBar(title = { Text("Tenchaについて") }) },
-    bottomBar = { TenchaNavigationBar(Screen.ABOUT, onNavigate, updateAvailable) },
+    topBar = {
+      TopAppBar(
+        title = { Text("Tencha", fontWeight = FontWeight.SemiBold) },
+        actions = { TextButton(onClick = { snapshot = ControlClient.snapshot(context) }) { Text("再確認") } },
+      )
+    },
     snackbarHost = { SnackbarHost(snackbar) },
   ) { inner ->
     LazyColumn(
       modifier = Modifier.fillMaxSize().padding(inner),
       contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
-      verticalArrangement = Arrangement.spacedBy(16.dp),
+      verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
       item {
         Card {
-          Column(
-            Modifier.fillMaxWidth().padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(20.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
           ) {
             Icon(painterResource(R.drawable.ic_tencha_settings), contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
-            Text("Tencha", style = MaterialTheme.typography.headlineSmall)
-            Text("Enhance your LINE.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelLarge)
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+              Text("Tencha", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+              Text("Enhance your LINE.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+          }
+        }
+      }
+      item {
+        val color by animateColorAsState(
+          if (connected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+          animationSpec = tween(250),
+          label = "Connection background",
+        )
+        Card(colors = CardDefaults.cardColors(containerColor = color)) {
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(20.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Box(Modifier.size(14.dp).background(if (connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, CircleShape))
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+              Text(if (connected) "LINEに接続済み" else "LINEへの接続を確認できません", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+              if (connected) {
+                Text(runtimeModeLabel(snapshot.getString("loaderMode", "unknown"), snapshot.getBoolean("loaderModeReported", false)), style = MaterialTheme.typography.bodyMedium)
+              } else {
+                Text(if (lastSeen > 0L) "更新後の接続を確認するにはLINEを再起動してください" else "LINEでTenchaを有効化して起動してください", style = MaterialTheme.typography.bodyMedium)
+              }
+              if (lastSeen > 0L) Text("最終確認 ${formatTime(lastSeen)}", style = MaterialTheme.typography.labelMedium)
+            }
           }
         }
       }
       item {
         Card {
-          Column(
-            Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-          ) {
-            Text("アプリの更新", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+          Column {
+            ListItem(headlineContent = { Text("LINEのバージョン") }, trailingContent = { Text(lineVersion ?: "未導入", style = MaterialTheme.typography.titleMedium) })
+            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+            ListItem(headlineContent = { Text("Tenchaのバージョン") }, trailingContent = { Text(BuildConfig.VERSION_NAME, style = MaterialTheme.typography.titleMedium) })
+          }
+        }
+      }
+      item {
+        Card {
+          Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("機能の設定", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("機能のオン・オフはLINEの「設定 → Tencha → モジュール設定」で変更できます。", style = MaterialTheme.typography.bodyMedium)
+            OutlinedButton(
+              modifier = Modifier.fillMaxWidth(),
+              enabled = lineVersion != null,
+              onClick = { openPackage(context, "jp.naver.line.android") },
+            ) { Text("LINEを開く") }
+          }
+        }
+      }
+      item { SectionTitle("Tenchaについて") }
+      item {
+        Card {
+          Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("TenchaはAndroid版LINEを拡張する非公式プロジェクトです。LINEヤフー株式会社とは関係ありません。", style = MaterialTheme.typography.bodyMedium)
+            Text("LINEやTenchaの更新により互換性が失われる場合があります。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            HorizontalDivider()
+            Text(if (updateAvailable) "v${availableVersion ?: "最新版"} が利用できます" else "GitHubから更新", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             AnimatedVisibility(visible = updateStatus != null, enter = fadeIn(tween(180)), exit = fadeOut(tween(120))) {
               updateStatus?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
-            AnimatedVisibility(visible = updateBusy, enter = fadeIn(tween(180)), exit = fadeOut(tween(120))) {
-              LinearProgressIndicator(Modifier.fillMaxWidth())
-            }
+            if (updateBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
             Button(
               modifier = Modifier.fillMaxWidth(),
               enabled = !updateBusy,
@@ -955,62 +310,45 @@ private fun AboutScreen(
                     updateStatus = "インストールの許可を有効にしてください"
                     installPermissionLauncher.launch(GitHubUpdater.installPermissionIntent(context))
                   }
-                  return@Button
-                }
-
-                updateBusy = true
-                updateStatus = "最新版を確認しています…"
-                scope.launch {
-                  try {
-                    val available = withContext(Dispatchers.IO) { GitHubUpdater.checkLatest() }
-                    onUpdateResult(available.isNewerThanCurrent, available.version)
-                    if (!available.isNewerThanCurrent) {
-                      updateStatus = "最新版です（v${BuildConfig.VERSION_NAME}）"
-                      return@launch
+                } else {
+                  updateBusy = true
+                  updateStatus = "最新版を確認しています…"
+                  scope.launch {
+                    try {
+                      val latest = withContext(Dispatchers.IO) { GitHubUpdater.checkLatest() }
+                      recordUpdateResult(latest.isNewerThanCurrent, latest.version)
+                      if (!latest.isNewerThanCurrent) {
+                        updateStatus = "最新版です（v${BuildConfig.VERSION_NAME}）"
+                      } else {
+                        updateStatus = "v${latest.version} をダウンロードしています…"
+                        val apk = withContext(Dispatchers.IO) { GitHubUpdater.downloadAndVerify(context, latest) }
+                        downloadedApk = apk
+                        updateStatus = "検証完了。インストーラーを開きます…"
+                        if (GitHubUpdater.canRequestInstall(context)) {
+                          GitHubUpdater.launchInstaller(context, apk)
+                          updateStatus = "インストーラーを開きました"
+                        } else {
+                          updateStatus = "インストールの許可を有効にしてください"
+                          installPermissionLauncher.launch(GitHubUpdater.installPermissionIntent(context))
+                        }
+                      }
+                    } catch (error: Exception) {
+                      updateStatus = "更新に失敗しました"
+                      snackbar.showSnackbar(error.message ?: "GitHubへ接続できません")
+                    } finally {
+                      updateBusy = false
                     }
-
-                    updateStatus = "v${available.version} をダウンロードしています…"
-                    val apk = withContext(Dispatchers.IO) { GitHubUpdater.downloadAndVerify(context, available) }
-                    downloadedApk = apk
-                    updateStatus = "検証完了。インストーラーを開きます…"
-                    updateBusy = false
-
-                    if (GitHubUpdater.canRequestInstall(context)) {
-                      GitHubUpdater.launchInstaller(context, apk)
-                      updateStatus = "インストーラーを開きました"
-                    } else {
-                      updateStatus = "インストールの許可を有効にしてください"
-                      installPermissionLauncher.launch(GitHubUpdater.installPermissionIntent(context))
-                    }
-                  } catch (error: Exception) {
-                    updateStatus = "更新に失敗しました"
-                    snackbar.showSnackbar(error.message ?: "GitHubへ接続できません")
-                  } finally {
-                    updateBusy = false
                   }
                 }
               },
-            ) {
-              Text(if (updateBusy) "更新中…" else "最新版へ更新")
-            }
-          }
-        }
-      }
-      if (showRootlessSetup) {
-        item {
-          Card {
-            ListItem(
-              headlineContent = { Text("rootなしで使う") },
-              supportingContent = { Text("LINEへ未接続の非root環境向け") },
-              trailingContent = { TextButton(onClick = { onNavigate(Screen.ROOTLESS) }) { Text("設定") } },
-            )
+            ) { Text(if (updateBusy) "更新中…" else "最新版へ更新") }
           }
         }
       }
       item { SectionTitle("開発者") }
       item {
         Card {
-          Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("yukkuri-matcha-tea", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             SocialLinkButton("GitHub", "github.com/yukkuri-matcha-tea", R.drawable.ic_social_github) { openUrl(context, "https://github.com/yukkuri-matcha-tea") }
             SocialLinkButton("X", "@yukkuri_matcha_", R.drawable.ic_social_x) { openUrl(context, "https://x.com/yukkuri_matcha_") }
@@ -1018,283 +356,43 @@ private fun AboutScreen(
           }
         }
       }
-      item { SectionTitle("このアプリについて") }
-      item {
-        Card {
-          Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("TenchaはAndroid版LINEを拡張する非公式プロジェクトです。LINEヤフー株式会社とは関係ありません。", style = MaterialTheme.typography.bodyMedium)
-            Text("LINEやTenchaの更新により互換性が失われる場合があります。重要なデータは事前にバックアップしてください。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-          }
-        }
-      }
-    }
-  }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun RootlessSetupScreen(onBack: () -> Unit, snackbar: SnackbarHostState) {
-  val context = LocalContext.current
-  val lspatchVersion = remember { installedPackageVersion(context.packageManager, "org.lsposed.lspatch") }
-  val lspatchReady = remember(lspatchVersion) { lspatchVersion != null && versionAtLeast(lspatchVersion, "1.1") }
-  val shizukuVersion = remember { installedPackageVersion(context.packageManager, "moe.shizuku.privileged.api") }
-  val lineVersion = remember { installedLineVersion(context.packageManager) }
-
-  Scaffold(
-    topBar = {
-      TopAppBar(
-        title = { Text("非rootセットアップ") },
-        navigationIcon = {
-          IconButton(onClick = onBack) {
-            Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = "戻る")
-          }
-        },
-      )
-    },
-    snackbarHost = { SnackbarHost(snackbar) },
-  ) { inner ->
-    LazyColumn(
-      modifier = Modifier.fillMaxSize().padding(inner),
-      contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      item {
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-          Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("LSPatch版Tencha", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-            Text("rootやZygiskを使わず、利用者自身のLINEへTenchaを読み込ませます。", style = MaterialTheme.typography.bodyMedium)
-            Text("Shizukuは任意です。", style = MaterialTheme.typography.bodySmall)
-          }
-        }
-      }
-      item { SectionTitle("準備状況") }
-      item {
-        Card {
-          Column {
-            SetupStatusItem("LINE", lineVersion?.let { "インストール済み $it" } ?: "未インストール", lineVersion != null)
-            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-            SetupStatusItem(
-              "LSPatch Manager",
-              when {
-                lspatchVersion == null -> "未インストール"
-                lspatchReady -> "使用可能 $lspatchVersion"
-                else -> "更新が必要 $lspatchVersion → 1.1以上"
-              },
-              lspatchReady,
-            )
-            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-            SetupStatusItem("Shizuku", shizukuVersion?.let { "インストール済み $it" } ?: "未インストール・任意", shizukuVersion != null)
-          }
-        }
-      }
-      item {
-        Button(
-          modifier = Modifier.fillMaxWidth(),
-          onClick = {
-            if (lspatchReady) openPackage(context, "org.lsposed.lspatch")
-            else openUrl(context, "https://github.com/JingMatrix/LSPatch/releases/latest")
-          },
-        ) { Text(if (lspatchReady) "LSPatchを開く" else if (lspatchVersion != null) "LSPatch 1.1へ更新" else "LSPatchを入手") }
-      }
-      item {
-        OutlinedButton(
-          modifier = Modifier.fillMaxWidth(),
-          onClick = {
-            if (shizukuVersion != null) openPackage(context, "moe.shizuku.privileged.api")
-            else openUrl(context, "https://shizuku.rikka.app/download/")
-          },
-        ) { Text(if (shizukuVersion != null) "Shizukuを開く" else "Shizukuを入手") }
-      }
-      item { SectionTitle("導入手順") }
-      item {
-        Card {
-          Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            SetupStep("1", "LINEをバックアップ", "アカウント情報を確認し、必要なトーク履歴をLINE公式機能でバックアップします。")
-            SetupStep("2", "Shizukuを起動", "任意。Android 11以降はワイヤレスデバッグから起動できます。")
-            SetupStep("3", "LSPatchでLINEを選択", "Manager modeでLINEをパッチします。Split APKはLSPatchが一式として処理します。")
-            SetupStep("4", "Tenchaを有効化", "LSPatchのモジュール画面でTenchaを選び、パッチ済みLINEへ適用します。")
-            SetupStep("5", "LINEを再起動", "Tenchaホームで接続状態を確認します。")
-          }
-        }
-      }
-      item {
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-          Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("インストール前の注意", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text("パッチ済みLINEは公式版と署名が異なるため、公式LINEを直接上書きできない場合があります。TenchaはLINEの削除やデータ消去を自動実行しません。", style = MaterialTheme.typography.bodyMedium)
-          }
-        }
-      }
+      item { Spacer(Modifier.height(8.dp)) }
     }
   }
 }
 
 @Composable
-private fun SetupStatusItem(title: String, detail: String, ready: Boolean) {
-  ListItem(
-    colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = Color.Transparent),
-    headlineContent = { Text(title) },
-    supportingContent = { Text(detail) },
-    leadingContent = { StatusDot(if (ready) "接続済み" else "未接続") },
-  )
-}
-
-@Composable
-private fun SetupStep(number: String, title: String, description: String) {
-  Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-    Text(number, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-      Text(title, style = MaterialTheme.typography.titleMedium)
-      Text(description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-  }
-}
-
-@Composable
-private fun TenchaNavigationBar(selected: Screen, onNavigate: (Screen) -> Unit, updateAvailable: Boolean) {
-  NavigationBar {
-    NavigationItem(Screen.HOME, "ホーム", R.drawable.ic_nav_home, selected, onNavigate)
-    NavigationItem(Screen.SETTINGS, "機能", R.drawable.ic_nav_tune, selected, onNavigate)
-    NavigationItem(Screen.DIAGNOSTICS, "診断", R.drawable.ic_nav_health, selected, onNavigate)
-    NavigationItem(Screen.ABOUT, "情報", R.drawable.ic_nav_info, selected, onNavigate, updateAvailable)
-  }
-}
-
-@Composable
-private fun RowScope.NavigationItem(
-  screen: Screen,
-  label: String,
-  icon: Int,
-  selected: Screen,
-  onNavigate: (Screen) -> Unit,
-  showBadge: Boolean = false,
-) {
-  NavigationBarItem(
-    selected = selected == screen,
-    onClick = { if (selected != screen) onNavigate(screen) },
-    icon = {
-      BadgedBox(
-        badge = {
-          AnimatedUpdateBadge(showBadge)
-        },
-      ) {
-        Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(24.dp))
-      }
-    },
-    label = { Text(label) },
-  )
-}
-
-@Composable
-private fun AnimatedUpdateBadge(visible: Boolean) {
-  AnimatedVisibility(
-    visible = visible,
-    enter = fadeIn(tween(160)),
-    exit = fadeOut(tween(100)),
-  ) { Badge() }
-}
-
-@Composable
-private fun StatusDot(status: String) {
-  val targetColor = when (status) {
-    "動作中", "接続済み" -> MaterialTheme.colorScheme.primary
-    "Hook失敗", "Safe Mode", "未接続", "互換性なし" -> MaterialTheme.colorScheme.error
-    else -> MaterialTheme.colorScheme.outline
-  }
-  val color by animateColorAsState(targetColor, animationSpec = tween(250), label = "Status color")
-  Box(Modifier.size(10.dp).background(color, CircleShape))
+private fun SectionTitle(text: String) {
+  Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
 }
 
 @Composable
 private fun SocialLinkButton(title: String, subtitle: String, iconRes: Int, onClick: () -> Unit) {
   OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-      Icon(
-        painter = painterResource(iconRes),
-        contentDescription = null,
-        modifier = Modifier.size(22.dp),
-        tint = MaterialTheme.colorScheme.onSurface,
-      )
+      Icon(painterResource(iconRes), contentDescription = null, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurface)
       Text(title, fontWeight = FontWeight.SemiBold)
-      Text(subtitle, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+      Text(subtitle, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
     }
   }
-}
-
-@Composable
-private fun SectionTitle(text: String, count: Int? = null) {
-  Row(
-    modifier = Modifier.fillMaxWidth(),
-    horizontalArrangement = Arrangement.SpaceBetween,
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-    if (count != null) {
-      Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-      ) {
-        Text(
-          count.toString(),
-          modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-          style = MaterialTheme.typography.labelMedium,
-          fontWeight = FontWeight.SemiBold,
-        )
-      }
-    }
-  }
-}
-
-@Composable
-private fun StatusText(text: String) {
-  val targetColor = when (text) {
-    "動作中", "接続済み" -> MaterialTheme.colorScheme.primary
-    "Hook失敗", "Safe Mode", "未接続" -> MaterialTheme.colorScheme.error
-    else -> MaterialTheme.colorScheme.onSurfaceVariant
-  }
-  val color by animateColorAsState(targetColor, animationSpec = tween(220), label = "Status text color")
-  Text(text, style = MaterialTheme.typography.labelLarge, color = color)
 }
 
 private fun formatTime(time: Long): String =
-  if (time <= 0L) "なし" else DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM).format(Date(time))
+  DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM).format(Date(time))
 
-private fun installedLineVersion(packageManager: PackageManager): String? =
+private fun packageInfoOrNull(packageManager: PackageManager, packageName: String): android.content.pm.PackageInfo? =
   try {
-    @Suppress("DEPRECATION") packageManager.getPackageInfo("jp.naver.line.android", 0).versionName
+    @Suppress("DEPRECATION") packageManager.getPackageInfo(packageName, 0)
   } catch (_: PackageManager.NameNotFoundException) {
     null
   }
 
-private fun installedPackageVersion(packageManager: PackageManager, packageName: String): String? =
-  try {
-    @Suppress("DEPRECATION") packageManager.getPackageInfo(packageName, 0).versionName
-  } catch (_: PackageManager.NameNotFoundException) {
-    null
-  }
-
-private fun versionAtLeast(actual: String, required: String): Boolean {
-  val actualParts = actual.split('.').map { it.toIntOrNull() ?: 0 }
-  val requiredParts = required.split('.').map { it.toIntOrNull() ?: 0 }
-  val count = maxOf(actualParts.size, requiredParts.size)
-  return (0 until count).firstNotNullOfOrNull { index ->
-    val left = actualParts.getOrElse(index) { 0 }
-    val right = requiredParts.getOrElse(index) { 0 }
-    when {
-      left > right -> true
-      left < right -> false
-      else -> null
-    }
-  } ?: true
-}
-
-private fun openPackage(context: android.content.Context, packageName: String) {
+private fun openPackage(context: Context, packageName: String) {
   context.packageManager.getLaunchIntentForPackage(packageName)?.let {
     context.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
   }
 }
 
-private fun openUrl(context: android.content.Context, url: String) {
+private fun openUrl(context: Context, url: String) {
   context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 }
