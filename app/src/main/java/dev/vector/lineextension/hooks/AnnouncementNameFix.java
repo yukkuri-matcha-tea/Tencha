@@ -13,8 +13,6 @@ public class AnnouncementNameFix implements BaseHook {
 
   @Override
   public void hook(VectorConfig options, LoadParam lpparam) {
-    if (!options.fixAnnouncementName.enabled) return;
-
     final LineVersion.Config config = LineVersion.get();
     if (config == null
         || config.announcementFix.formatterClass.isEmpty()

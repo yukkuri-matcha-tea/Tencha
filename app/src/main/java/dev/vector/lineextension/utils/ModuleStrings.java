@@ -18,7 +18,6 @@ public class ModuleStrings {
   public static final String CAT_NOTIFICATION = "通知";
   public static final String CAT_STORAGE = "保存先";
   public static final String CAT_BACKUP = "バックアップ";
-  public static final String CAT_SYSTEM = "システム";
   public static final String CAT_OTHER = "その他";
   public static final String CAT_DEVELOPER = "開発者向け";
 
@@ -38,6 +37,7 @@ public class ModuleStrings {
   public static final String SEC_CHAT_MEDIA = "メディア";
   public static final String SEC_CHAT_SEARCH = "検索";
   public static final String SEC_CHAT_DISPLAY = "表示";
+  public static final String SEC_CHAT_CALL = "通話";
 
   public static final String SEC_ADS = "広告・おすすめ";
   public static final String SEC_TABS = "タブ";
@@ -149,6 +149,11 @@ public class ModuleStrings {
   public static final String OPT_SHOW_SECONDS_IN_CHAT_TIME_LABEL = "チャットの時刻に秒を表示";
   public static final String OPT_SHOW_SECONDS_IN_CHAT_TIME_DESC =
       "各メッセージ横の時刻表示に秒を追加します。 (例: 12:34 → 12:34:56)";
+  public static final String OPT_CALL_MIC_METER_LABEL = "通話中のマイクレベルを表示";
+  public static final String OPT_CALL_MIC_METER_DESC =
+      "LINEの通話エンジンが計測した録音レベルを通話画面に表示します。マイクの音量設定は変更しません。";
+  public static final String OPT_PARTICIPANT_VOLUME_LABEL = "参加者ごとの音量を調整";
+  public static final String OPT_PARTICIPANT_VOLUME_DESC = "1対1通話とグループ通話で、参加者ごとの受信音量を0〜200%に調整します。";
   public static final String OPT_SELECT_ALL_IN_EDIT_MODE_LABEL = "メッセージ削除画面に全選択ボタンを追加";
   public static final String OPT_SELECT_ALL_IN_EDIT_MODE_DESC =
       "メッセージ削除画面の下部に、すべてのメッセージを選択・選択解除できるボタンを追加します。";
@@ -160,10 +165,6 @@ public class ModuleStrings {
   public static final String EDIT_HISTORY_ORIGINAL = "元のメッセージ";
   public static final String EDIT_HISTORY_EDITED = "編集";
   public static final String EDIT_HISTORY_DELETE_CONFIRM_MSG = "このメッセージの編集履歴を削除しますか？";
-  public static final String OPT_FIX_ANNOUNCEMENT_NAME_LABEL = "アナウンス者名の表示を修正";
-  public static final String OPT_FIX_ANNOUNCEMENT_NAME_DESC =
-      "パッチ済みのLINEで、アナウンス登録時のシステムメッセージが「がアナウンスしました」と名前が空になる不具合を修正し、正しく表示されるようにします。";
-
   public static final String OPT_HIDE_AI_ICON_PERMANENTLY_LABEL = "トークルームのAgent iを永久に非表示";
   public static final String OPT_HIDE_AI_ICON_PERMANENTLY_DESC =
       "トークルームのメッセージ入力欄に表示されるAgent iを常に非表示にします。通常は30日間のみ非表示にできますが、このオプションを有効にすると設定に関わらず永続的に非表示になります。";
@@ -242,10 +243,6 @@ public class ModuleStrings {
   public static final String OPT_REMOVE_NOTIFICATION_MUTE_BUTTON_LABEL = "「通知をオフ」ボタンを非表示";
   public static final String OPT_REMOVE_NOTIFICATION_MUTE_BUTTON_DESC =
       "LINEの通知に表示される「通知をオフ」ボタンを削除します。";
-
-  public static final String OPT_FIX_SETTINGS_TALK_CRASH_LABEL = "トーク設定のクラッシュを修正";
-  public static final String OPT_FIX_SETTINGS_TALK_CRASH_DESC =
-      "パッチ済みのLINEで、公式設定の「トーク」を開くとクラッシュする問題を修正します。";
 
   public static final String OPT_EXPERIMENTAL_FCM_FIX_LABEL = "FCM Fix";
   public static final String OPT_EXPERIMENTAL_FCM_FIX_DESC =

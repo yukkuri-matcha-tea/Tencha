@@ -97,6 +97,8 @@ public class Main extends XposedModule {
       applyHook(new SettingsUIInjector(), lpparam);
       applyHook(new SettingsButtonLongPress(), lpparam);
       applyHook(new SafeResourceFix(), lpparam);
+      applyHook(new AnnouncementNameFix(), lpparam);
+      applyHook(new MainSurfaceFix(), lpparam);
 
       if (options.recordReadHistory.enabled
           || options.preventMarkAsRead.enabled
@@ -132,11 +134,11 @@ public class Main extends XposedModule {
         applyHook(new SearchMin1CharHook(), lpparam);
         applyHook(new SearchResultCountHook(), lpparam);
       }
-      if (options.fixAnnouncementName.enabled) {
-        applyHook(new AnnouncementNameFix(), lpparam);
-      }
       if (options.showSecondsInChatTime.enabled) {
         applyHook(new ChatTimestampSeconds(), lpparam);
+      }
+      if (options.callMicMeter.enabled || options.participantVolume.enabled) {
+        applyHook(new CallMicLevelHook(), lpparam);
       }
       if (options.selectAllInEditMode.enabled) {
         applyHook(new ChatEditSelectAllHook(), lpparam);

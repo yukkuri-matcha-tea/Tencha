@@ -12,7 +12,6 @@ public class VectorConfig {
     CHAT(CAT_CHAT),
     DISPLAY(CAT_DISPLAY),
     NOTIFICATION(CAT_NOTIFICATION),
-    SYSTEM(CAT_SYSTEM),
     BACKUP(CAT_BACKUP),
     OTHER(CAT_OTHER),
     DEVELOPER(CAT_DEVELOPER);
@@ -80,9 +79,10 @@ public class VectorConfig {
   public final Item searchByMember               = item("search_by_member",                 OPT_SEARCH_BY_MEMBER_LABEL,                 OPT_SEARCH_BY_MEMBER_DESC,                 false, Category.CHAT,         SEC_CHAT_SEARCH);
   public final Item searchMin1Char               = item("search_min_1_char",                OPT_SEARCH_MIN_1_CHAR_LABEL,                OPT_SEARCH_MIN_1_CHAR_DESC,                false, Category.CHAT,         SEC_CHAT_SEARCH);
   public final Item showSecondsInChatTime        = item("show_seconds_in_chat_time",        OPT_SHOW_SECONDS_IN_CHAT_TIME_LABEL,        OPT_SHOW_SECONDS_IN_CHAT_TIME_DESC,        false, Category.CHAT,         SEC_CHAT_DISPLAY);
+  public final Item callMicMeter                 = item("call_mic_meter",                  OPT_CALL_MIC_METER_LABEL,                  OPT_CALL_MIC_METER_DESC,                  false, Category.CHAT,         SEC_CHAT_CALL);
+  public final Item participantVolume            = item("single_peer_volume",              OPT_PARTICIPANT_VOLUME_LABEL,              OPT_PARTICIPANT_VOLUME_DESC,              false, Category.CHAT,         SEC_CHAT_CALL);
   public final Item selectAllInEditMode          = item("select_all_in_edit_mode",          OPT_SELECT_ALL_IN_EDIT_MODE_LABEL,          OPT_SELECT_ALL_IN_EDIT_MODE_DESC,          false, Category.CHAT,         SEC_CHAT_DISPLAY);
   public final Item hideAiIconPermanently        = item("hide_ai_icon_permanently",         OPT_HIDE_AI_ICON_PERMANENTLY_LABEL,         OPT_HIDE_AI_ICON_PERMANENTLY_DESC,         false, Category.CHAT,         SEC_CHAT_DISPLAY);
-  public final Item fixAnnouncementName          = item("fix_announcement_name",            OPT_FIX_ANNOUNCEMENT_NAME_LABEL,            OPT_FIX_ANNOUNCEMENT_NAME_DESC,            false, Category.CHAT,         SEC_CHAT_DISPLAY);
   public final Item openUrlInDefaultBrowser      = item("open_url_in_default_browser",      OPT_OPEN_URL_IN_DEFAULT_BROWSER_LABEL,      OPT_OPEN_URL_IN_DEFAULT_BROWSER_DESC,      false, Category.CHAT,         SEC_CHAT_DISPLAY);
   public final Item removeAds                    = item("remove_ads",                       OPT_REMOVE_ADS_LABEL,                       OPT_REMOVE_ADS_DESC,                       false, Category.DISPLAY,      SEC_ADS);
   public final Item removeHomeRecommendations    = item("remove_home_recommendations",      OPT_REMOVE_HOME_RECOMMENDATIONS_LABEL,      OPT_REMOVE_HOME_RECOMMENDATIONS_DESC,      false, Category.DISPLAY,      SEC_ADS);
@@ -108,7 +108,6 @@ public class VectorConfig {
   public final Item reactionNotification         = item("reaction_notification",            OPT_REACTION_NOTIFICATION_LABEL,            OPT_REACTION_NOTIFICATION_DESC,            false, Category.NOTIFICATION, "");
   public final Item stackMessageNotifications    = item("stack_message_notifications",      OPT_STACK_MESSAGE_NOTIFICATIONS_LABEL,      OPT_STACK_MESSAGE_NOTIFICATIONS_DESC,      false, Category.NOTIFICATION, "");
   public final Item removeNotificationMuteButton = item("remove_notification_mute_button",  OPT_REMOVE_NOTIFICATION_MUTE_BUTTON_LABEL,  OPT_REMOVE_NOTIFICATION_MUTE_BUTTON_DESC,  false, Category.NOTIFICATION, "");
-  public final Item safeSettingsResources        = item("safe_settings_resources",          OPT_FIX_SETTINGS_TALK_CRASH_LABEL,          OPT_FIX_SETTINGS_TALK_CRASH_DESC,          true,  Category.SYSTEM,       "");
   public final Item developerMode                = item("developer_mode",                   OPT_DEVELOPER_MODE_LABEL,                   OPT_DEVELOPER_MODE_DESC,                   false, Category.DEVELOPER,    "");
   public final Item showProfileTimestamps        = item("show_profile_timestamps",          OPT_SHOW_PROFILE_TIMESTAMPS_LABEL,          OPT_SHOW_PROFILE_TIMESTAMPS_DESC,          false, Category.DEVELOPER,    SEC_DEVELOPER_PROFILE);
   public final Item experimentalFcmFix           = item("experimental_fcm_fix",             OPT_EXPERIMENTAL_FCM_FIX_LABEL,             OPT_EXPERIMENTAL_FCM_FIX_DESC,             false, Category.DEVELOPER,    SEC_DEVELOPER_NOTIFICATION);

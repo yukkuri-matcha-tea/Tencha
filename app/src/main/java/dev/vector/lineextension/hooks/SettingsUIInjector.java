@@ -63,7 +63,6 @@ public class SettingsUIInjector implements BaseHook {
     VectorConfig.Category.CHAT,
     VectorConfig.Category.DISPLAY,
     VectorConfig.Category.NOTIFICATION,
-    VectorConfig.Category.SYSTEM,
     VectorConfig.Category.DEVELOPER
   };
 

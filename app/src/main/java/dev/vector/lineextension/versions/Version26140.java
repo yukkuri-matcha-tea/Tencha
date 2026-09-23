@@ -127,6 +127,22 @@ public final class Version26140 {
     v.home26NavIcon.settingsDrawableId = 0x7f081278;
     v.home26NavIcon.rendererClass = "ng2.n";
 
+    // The 26.13.x LYP controller and loading-data model were removed in 26.14.0.
+    // Resource-backed home sections still exist and are handled without these stale classes.
+    v.home.lypRecommendationControllerClass = "";
+    v.home.lypRecommendationModuleArgClass = "";
+    v.home.lypRecommendationContextClass = "";
+    v.home.lypRecommendationModuleClass = "";
+    v.home.lypRecommendationSectionClass = "";
+    v.home.home26LoadingMoreDataClass = "";
+
+    // Announcement formatter and its UI event. These are the post-conversion classes used by
+    // the chat renderer; the inherited 26.13.x formatter/event no longer exist in 26.14.0.
+    v.announcementFix.formatterClass = "tn1.a";
+    v.announcementFix.formatMethod = "a";
+    v.announcementFix.nameResolverMethod = "b";
+    v.announcementFix.announcementEventClass = "b41.g$d0";
+
     // Other-user profile viewer and the native profile-decoration editor.
     // Verified from the 26.14.0 base APK, not inherited from an older mapping.
     v.profileViewer.profileActivityClass = "com.linecorp.line.userprofile.impl.UserProfileActivity";

@@ -7,6 +7,7 @@ plugins {
 android {
     namespace 'dev.vector.lineextension'
     compileSdk 37
+    ndkVersion '29.0.14206865'
 
     def ciKeystorePath = System.getenv('TENCHA_KEYSTORE_PATH')
 
@@ -25,8 +26,14 @@ android {
         applicationId 'dev.vector.lineextension'
         minSdk 26
         targetSdk 35
-        versionCode 10532
-        versionName "1.5.32"
+        versionCode 10549
+        versionName "1.6.0"
+        externalNativeBuild {
+            cmake {
+                cppFlags '-std=c++17 -Wall -Wextra -Werror'
+                abiFilters 'arm64-v8a'
+            }
+        }
         multiDexEnabled true
     }
 
@@ -61,6 +68,13 @@ android {
         noCompress 'themefile'
     }
 
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.22.1'
+        }
+    }
+
     sourceSets {
         main {
             java.srcDirs = ['src/main/java']
@@ -68,6 +82,9 @@ android {
     }
 
     packaging {
+        jniLibs {
+            useLegacyPackaging true
+        }
         resources {
             merges += 'META-INF/xposed/*'
         }

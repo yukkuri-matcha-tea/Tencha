@@ -52,6 +52,12 @@ public class LineVersionCompatibilityTest {
     assertEquals("qm6.i", config.profileViewer.decoControllerClass);
     assertEquals("qm6.l0", config.profileViewer.decoEditorControllerClass);
     assertEquals("z7", config.profileViewer.methodSaveDecorations);
+    assertEquals("", config.home.lypRecommendationControllerClass);
+    assertEquals("", config.home.home26LoadingMoreDataClass);
+    assertEquals("tn1.a", config.announcementFix.formatterClass);
+    assertEquals("a", config.announcementFix.formatMethod);
+    assertEquals("b", config.announcementFix.nameResolverMethod);
+    assertEquals("b41.g$d0", config.announcementFix.announcementEventClass);
   }
 
   @Test

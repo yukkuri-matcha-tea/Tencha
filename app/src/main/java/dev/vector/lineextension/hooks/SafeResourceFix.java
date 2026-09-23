@@ -10,8 +10,6 @@ import dev.vector.lineextension.VectorConfig;
 public class SafeResourceFix implements BaseHook {
   @Override
   public void hook(VectorConfig config, LoadParam lpparam) throws Throwable {
-    if (!config.safeSettingsResources.enabled) return;
-
     try {
       Vector.module
           .hook(Reflect.findMethodExact(Resources.class, "getText", int.class))

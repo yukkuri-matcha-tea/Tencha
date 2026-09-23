@@ -27,95 +27,111 @@ public class RemoveHomeContents implements BaseHook {
   @Override
   public void hook(VectorConfig config, LoadParam lpparam) throws Throwable {
     LineVersion.Config cfg = LineVersion.get();
+    if (cfg == null) return;
 
-    Vector.module
-        .hook(Reflect.findMethodExact(cfg.main.mainActivity, lpparam.classLoader, "onResume"))
-        .intercept(
-            chain -> {
-              if (!isSetupDone) {
-                android.app.Activity host = (android.app.Activity) chain.getThisObject();
-                String pkg = cfg.linePkg;
-                recId = host.getResources().getIdentifier(cfg.home.resRecommendation, "id", pkg);
-                svcCarouselId =
-                    host.getResources().getIdentifier(cfg.home.resServiceCarouselId, "id", pkg);
-                svcTitleId =
-                    host.getResources().getIdentifier(cfg.home.resServiceTitleId, "id", pkg);
-                noServicesId =
-                    host.getResources().getIdentifier(cfg.home.resNoServicesId, "id", pkg);
-                isSetupDone = true;
-              }
-              return chain.proceed();
-            });
+    hookResourceViews(config, cfg, lpparam);
+    hookLegacyAccordion(config, lpparam, cfg);
+    hookHome26ModuleFiltering(config, lpparam);
+  }
 
-    Vector.module
-        .hook(Reflect.findMethodExact(View.class, "onAttachedToWindow"))
-        .intercept(
-            chain -> {
-              View target = (View) chain.getThisObject();
-              int id = target.getId();
-              if (id == View.NO_ID) return chain.proceed();
-
-              if (id == recId && recId != 0) {
-                if (SettingsStore.get(
-                    config.removeHomeRecommendations.key,
-                    config.removeHomeRecommendations.enabled)) {
-                  hideView(target);
+  private static void hookResourceViews(
+      VectorConfig config, LineVersion.Config cfg, LoadParam lpparam) {
+    try {
+      Vector.module
+          .hook(Reflect.findMethodExact(cfg.main.mainActivity, lpparam.classLoader, "onResume"))
+          .intercept(
+              chain -> {
+                if (!isSetupDone) {
+                  android.app.Activity host = (android.app.Activity) chain.getThisObject();
+                  String pkg = cfg.linePkg;
+                  recId = host.getResources().getIdentifier(cfg.home.resRecommendation, "id", pkg);
+                  svcCarouselId =
+                      host.getResources().getIdentifier(cfg.home.resServiceCarouselId, "id", pkg);
+                  svcTitleId =
+                      host.getResources().getIdentifier(cfg.home.resServiceTitleId, "id", pkg);
+                  noServicesId =
+                      host.getResources().getIdentifier(cfg.home.resNoServicesId, "id", pkg);
+                  isSetupDone = true;
                 }
                 return chain.proceed();
-              }
+              });
 
-              if (id == svcCarouselId && svcCarouselId != 0) {
-                if (SettingsStore.get(
-                    config.removeHomeServices.key, config.removeHomeServices.enabled)) {
-                  hideView(target);
+      Vector.module
+          .hook(Reflect.findMethodExact(View.class, "onAttachedToWindow"))
+          .intercept(
+              chain -> {
+                View target = (View) chain.getThisObject();
+                int id = target.getId();
+                if (id == View.NO_ID) return chain.proceed();
+
+                if (id == recId && recId != 0) {
+                  if (SettingsStore.get(
+                      config.removeHomeRecommendations.key,
+                      config.removeHomeRecommendations.enabled)) {
+                    hideView(target);
+                  }
+                  return chain.proceed();
+                }
+
+                if (id == svcCarouselId && svcCarouselId != 0) {
+                  if (SettingsStore.get(
+                      config.removeHomeServices.key, config.removeHomeServices.enabled)) {
+                    hideView(target);
+                  }
+                  return chain.proceed();
+                }
+
+                if ((id == svcTitleId && svcTitleId != 0)
+                    || (id == noServicesId && noServicesId != 0)) {
+                  if (SettingsStore.get(
+                      config.removeHomeServices.key, config.removeHomeServices.enabled)) {
+                    ViewParent parent = target.getParent();
+                    if (parent instanceof View) hideView((View) parent);
+                  }
                 }
                 return chain.proceed();
-              }
+              });
+    } catch (Throwable t) {
+      Vector.log("Tencha: RemoveHomeContents resource hook failed: " + t);
+    }
+  }
 
-              if ((id == svcTitleId && svcTitleId != 0)
-                  || (id == noServicesId && noServicesId != 0)) {
-                if (SettingsStore.get(
-                    config.removeHomeServices.key, config.removeHomeServices.enabled)) {
-                  ViewParent parent = target.getParent();
-                  if (parent instanceof View) hideView((View) parent);
-                }
-              }
-              return chain.proceed();
-            });
-
-    if (cfg == null
-        || cfg.home.lypRecommendationControllerClass.isEmpty()
+  private static void hookLegacyAccordion(
+      VectorConfig config, LoadParam lpparam, LineVersion.Config cfg) {
+    if (cfg.home.lypRecommendationControllerClass.isEmpty()
         || cfg.home.lypRecommendationModuleArgClass.isEmpty()
         || cfg.home.lypRecommendationContextClass.isEmpty()
         || cfg.compose.composerClass.isEmpty()) return;
 
-    Vector.module
-        .hook(
-            Reflect.findMethodExact(
-                cfg.home.lypRecommendationControllerClass,
-                lpparam.classLoader,
-                "a",
-                String.class,
-                cfg.home.lypRecommendationModuleArgClass,
-                cfg.home.lypRecommendationContextClass,
-                cfg.compose.composerClass))
-        .intercept(
-            chain -> {
-              if (!SettingsStore.get(
-                  config.removeHomeAccordion.key, config.removeHomeAccordion.enabled)) {
-                return chain.proceed();
-              }
+    try {
+      Vector.module
+          .hook(
+              Reflect.findMethodExact(
+                  cfg.home.lypRecommendationControllerClass,
+                  lpparam.classLoader,
+                  "a",
+                  String.class,
+                  cfg.home.lypRecommendationModuleArgClass,
+                  cfg.home.lypRecommendationContextClass,
+                  cfg.compose.composerClass))
+          .intercept(
+              chain -> {
+                if (!SettingsStore.get(
+                    config.removeHomeAccordion.key, config.removeHomeAccordion.enabled)) {
+                  return chain.proceed();
+                }
 
-              Object module = chain.getArg(1);
-              if (module == null
-                  || !module.getClass().getName().equals(cfg.home.lypRecommendationModuleClass)) {
-                return chain.proceed();
-              }
+                Object module = chain.getArg(1);
+                if (module == null
+                    || !module.getClass().getName().equals(cfg.home.lypRecommendationModuleClass)) {
+                  return chain.proceed();
+                }
 
-              return getEmptySectionInstance(lpparam.classLoader);
-            });
-
-    hookHome26ModuleFiltering(config, lpparam);
+                return getEmptySectionInstance(lpparam.classLoader);
+              });
+    } catch (Throwable t) {
+      Vector.log("Tencha: RemoveHomeContents legacy accordion hook skipped: " + t);
+    }
   }
 
   private static void hookHome26ModuleFiltering(VectorConfig config, LoadParam lpparam) {
