@@ -59,6 +59,42 @@ final class NativeCallBridge {
     }
   }
 
+  static boolean enqueueSoundboard(Context context, short[] pcm) {
+    if (pcm == null || pcm.length == 0 || !ensureLoaded(context)) return false;
+    try {
+      return nativeInstallSoundboardMixer() && nativeEnqueueSoundboard(pcm);
+    } catch (Throwable error) {
+      Log.e("TenchaCall", "Soundboard PCM enqueue failed", error);
+      Vector.log("Tencha: soundboard PCM enqueue failed", error);
+      return false;
+    }
+  }
+
+  static boolean prepareSoundboard(Context context) {
+    if (context == null || !ensureLoaded(context)) return false;
+    try {
+      return nativeInstallSoundboardMixer();
+    } catch (Throwable error) {
+      Log.e("TenchaCall", "Soundboard PCM mixer installation failed", error);
+      return false;
+    }
+  }
+
+  static void clearSoundboard() {
+    if (!available) return;
+    try {
+      nativeClearSoundboard();
+    } catch (Throwable error) {
+      Log.e("TenchaCall", "Soundboard PCM clear failed", error);
+    }
+  }
+
   private static native boolean nativeSetParticipantVolume(
       long audioSessionStream, String participantId, float multiplier);
+
+  private static native boolean nativeInstallSoundboardMixer();
+
+  private static native boolean nativeEnqueueSoundboard(short[] pcm);
+
+  private static native void nativeClearSoundboard();
 }

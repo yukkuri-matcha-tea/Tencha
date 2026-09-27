@@ -2,10 +2,17 @@
 
 #include <android/log.h>
 #include <dlfcn.h>
+#include <link.h>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
+#include <mutex>
+#include <string>
+#include <vector>
 
 namespace {
 
@@ -25,6 +32,7 @@ struct Api {
   using ArrayRelease = void (*)(void*);
   using StreamKind = int (*)(void*);
   using StreamDirection = int (*)(void*);
+  using StreamString = const char* (*)(void*);
   using SetTalkerLevel = bool (*)(void*, const char*, const char*, bool, float,
                                   const char*, void*, void*);
 
@@ -36,6 +44,8 @@ struct Api {
   ArrayRelease arrayRelease = nullptr;
   StreamKind streamKind = nullptr;
   StreamDirection streamDirection = nullptr;
+  StreamString streamSourceUserId = nullptr;
+  StreamString streamSourceServiceId = nullptr;
   SetTalkerLevel setTalkerLevel = nullptr;
 
   bool load() {
@@ -50,6 +60,8 @@ struct Api {
     arrayRelease = resolve<ArrayRelease>(library, "ear_array_release");
     streamKind = resolve<StreamKind>(library, "jup_stream_get_kind");
     streamDirection = resolve<StreamDirection>(library, "jup_stream_get_dir");
+    streamSourceUserId = resolve<StreamString>(library, "jup_stream_get_src_userid");
+    streamSourceServiceId = resolve<StreamString>(library, "jup_stream_get_src_svc_id");
     setTalkerLevel =
         resolve<SetTalkerLevel>(library, "jup_stream_audio_rx_set_talker_level");
     return ready();
@@ -57,7 +69,7 @@ struct Api {
 
   bool ready() const {
     return getJCall && getStreamArray && arrayCount && arrayGet && arrayRelease && streamKind &&
-           streamDirection && setTalkerLevel;
+           streamDirection && streamSourceUserId && streamSourceServiceId && setTalkerLevel;
   }
 };
 
@@ -99,13 +111,15 @@ bool belongsToAndromeda(std::uintptr_t object) {
 
 void* getAmpAudio(std::uintptr_t audioSessionStream) {
   // LINE 26.14.0 arm64: AudioSessionStream owns shared_ptr<AudioProtocolStream> at +0x30.
-  // PlanetAudioInterface stores its AmpPlnAudio handle at +0x20. Java version-gates this bridge.
+  // AudioSessionStream calls the audio interface through the +0x10 secondary base. The verified
+  // PlanetAudioInterface implementation then reads AmpPlnAudio at +0x20 from that adjusted this,
+  // so the handle is AudioProtocolStream + 0x30 (not +0x20). Java version-gates this bridge.
   if (!readableRange(audioSessionStream, 0x38)) return nullptr;
   auto* session = reinterpret_cast<std::uint8_t*>(audioSessionStream);
   auto protocolValue = *reinterpret_cast<std::uintptr_t*>(session + 0x30);
-  if (!belongsToAndromeda(protocolValue) || !readableRange(protocolValue, 0x28)) return nullptr;
+  if (!belongsToAndromeda(protocolValue) || !readableRange(protocolValue, 0x38)) return nullptr;
   auto* protocol = reinterpret_cast<std::uint8_t*>(protocolValue);
-  auto ampValue = *reinterpret_cast<std::uintptr_t*>(protocol + 0x20);
+  auto ampValue = *reinterpret_cast<std::uintptr_t*>(protocol + 0x30);
   return readableRange(ampValue, 0x18) ? reinterpret_cast<void*>(ampValue) : nullptr;
 }
 
@@ -114,7 +128,192 @@ float percentToDb(float multiplier) {
   return 20.0f * std::log10(multiplier);
 }
 
+std::string userPart(const char* identity) {
+  if (identity == nullptr) return {};
+  const char* separator = std::strchr(identity, '@');
+  return separator == nullptr ? std::string(identity)
+                              : std::string(identity, static_cast<std::size_t>(separator - identity));
+}
+
+std::string servicePart(const char* identity) {
+  if (identity == nullptr) return {};
+  const char* separator = std::strchr(identity, '@');
+  return separator == nullptr || separator[1] == '\0' ? std::string() : std::string(separator + 1);
+}
+
+bool sameUser(const char* left, const char* right) {
+  const std::string leftUser = userPart(left);
+  const std::string rightUser = userPart(right);
+  return !leftUser.empty() && leftUser == rightUser;
+}
+
+void addUnique(std::vector<std::string>* values, const char* value) {
+  if (value == nullptr || value[0] == '\0') return;
+  for (const std::string& existing : *values) {
+    if (existing == value) return;
+  }
+  values->emplace_back(value);
+}
+
+constexpr std::uintptr_t kRecordCallbackOffset = 0x441f1c;
+constexpr int kSoundboardSampleRate = 16000;
+
+std::mutex soundboardMutex;
+std::vector<std::int64_t> soundboardTimeline;
+double soundboardPosition = 0.0;
+bool soundboardFormatLogged = false;
+
+using RecordCallback = void (*)(void*, void*);
+RecordCallback originalRecordCallback = nullptr;
+std::mutex hookMutex;
+
+int findAndromedaBase(struct dl_phdr_info* info, size_t, void* data) {
+  if (info->dlpi_name == nullptr ||
+      std::strstr(info->dlpi_name, "libandromeda.so") == nullptr) {
+    return 0;
+  }
+  *static_cast<std::uintptr_t*>(data) = static_cast<std::uintptr_t>(info->dlpi_addr);
+  return 1;
+}
+
+void mixSoundboardIntoRecording(void* recorder) {
+  if (recorder == nullptr || !soundboardMutex.try_lock()) return;
+  if (soundboardTimeline.empty()) {
+    soundboardMutex.unlock();
+    return;
+  }
+  auto* bytes = reinterpret_cast<std::uint8_t*>(recorder);
+  const int channelCount = *reinterpret_cast<int*>(bytes + 0x38);
+  const int byteCount = *reinterpret_cast<int*>(bytes + 0x3c);
+  auto* pcm = *reinterpret_cast<std::int16_t**>(bytes + 0x40);
+  const int sampleRate = *reinterpret_cast<int*>(bytes + 0x48);
+  if (!soundboardFormatLogged) {
+    __android_log_print(ANDROID_LOG_INFO, kTag,
+                        "Soundboard recorder format channels=%d rate=%d bytes=%d buffer=%p",
+                        channelCount, sampleRate, byteCount, pcm);
+    soundboardFormatLogged = true;
+  }
+  if (channelCount != 1 || sampleRate < 8000 || sampleRate > 192000 || byteCount <= 0 ||
+      byteCount > 1024 * 1024 || pcm == nullptr) {
+    soundboardMutex.unlock();
+    return;
+  }
+
+  const std::size_t sampleCount = static_cast<std::size_t>(byteCount) / sizeof(std::int16_t);
+  const double step = static_cast<double>(kSoundboardSampleRate) / sampleRate;
+  for (std::size_t outputIndex = 0; outputIndex < sampleCount; ++outputIndex) {
+    const std::size_t sourceIndex = static_cast<std::size_t>(soundboardPosition);
+    if (sourceIndex >= soundboardTimeline.size()) break;
+    std::int64_t mixed = static_cast<std::int64_t>(pcm[outputIndex]) +
+                         soundboardTimeline[sourceIndex];
+    mixed = std::max<std::int64_t>(INT16_MIN, std::min<std::int64_t>(INT16_MAX, mixed));
+    pcm[outputIndex] = static_cast<std::int16_t>(mixed);
+    soundboardPosition += step;
+  }
+  if (soundboardPosition >= static_cast<double>(soundboardTimeline.size())) {
+    soundboardTimeline.clear();
+    soundboardPosition = 0.0;
+  }
+  soundboardMutex.unlock();
+}
+
+void hookedRecordCallback(void* queue, void* recorder) {
+  mixSoundboardIntoRecording(recorder);
+  if (originalRecordCallback != nullptr) originalRecordCallback(queue, recorder);
+}
+
+void writeAbsoluteJump(void* destination, const void* target) {
+  const std::uint32_t instructions[] = {0x58000051U, 0xD61F0220U};  // ldr x17, #8; br x17
+  std::memcpy(destination, instructions, sizeof(instructions));
+  const std::uintptr_t address = reinterpret_cast<std::uintptr_t>(target);
+  std::memcpy(reinterpret_cast<std::uint8_t*>(destination) + sizeof(instructions), &address,
+              sizeof(address));
+}
+
+bool installSoundboardHook() {
+  std::lock_guard<std::mutex> guard(hookMutex);
+  if (originalRecordCallback != nullptr) return true;
+
+  std::uintptr_t andromedaBase = 0;
+  dl_iterate_phdr(findAndromedaBase, &andromedaBase);
+  if (andromedaBase == 0) {
+    __android_log_print(ANDROID_LOG_ERROR, kTag, "libandromeda mapping not found");
+    return false;
+  }
+  auto* target = reinterpret_cast<void*>(andromedaBase + kRecordCallbackOffset);
+  // Verified against LINE 26.14.0 arm64. Fail closed instead of patching another build.
+  const std::uint32_t expected[] = {0xD10183FFU, 0xA9037BFDU, 0xF90023F5U, 0xA9054FF4U};
+  if (std::memcmp(target, expected, sizeof(expected)) != 0) {
+    __android_log_print(ANDROID_LOG_ERROR, kTag, "Recording callback signature changed");
+    return false;
+  }
+
+  void* trampoline =
+      mmap(nullptr, 32, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (trampoline == MAP_FAILED) return false;
+  std::memcpy(trampoline, target, sizeof(expected));
+  writeAbsoluteJump(reinterpret_cast<std::uint8_t*>(trampoline) + sizeof(expected),
+                    reinterpret_cast<std::uint8_t*>(target) + sizeof(expected));
+  __builtin___clear_cache(reinterpret_cast<char*>(trampoline),
+                          reinterpret_cast<char*>(trampoline) + 32);
+
+  const long pageSize = sysconf(_SC_PAGESIZE);
+  const std::uintptr_t page =
+      reinterpret_cast<std::uintptr_t>(target) & ~(static_cast<std::uintptr_t>(pageSize) - 1U);
+  if (mprotect(reinterpret_cast<void*>(page), static_cast<std::size_t>(pageSize),
+               PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
+    munmap(trampoline, 32);
+    return false;
+  }
+  originalRecordCallback = reinterpret_cast<RecordCallback>(trampoline);
+  writeAbsoluteJump(target, reinterpret_cast<void*>(&hookedRecordCallback));
+  __builtin___clear_cache(reinterpret_cast<char*>(target), reinterpret_cast<char*>(target) + 16);
+  mprotect(reinterpret_cast<void*>(page), static_cast<std::size_t>(pageSize),
+           PROT_READ | PROT_EXEC);
+  __android_log_print(ANDROID_LOG_INFO, kTag, "Soundboard single TX mixer installed");
+  return true;
+}
+
 }  // namespace
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_vector_lineextension_hooks_NativeCallBridge_nativeInstallSoundboardMixer(JNIEnv*, jclass) {
+  return installSoundboardHook() ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_vector_lineextension_hooks_NativeCallBridge_nativeEnqueueSoundboard(JNIEnv* env, jclass,
+                                                                              jshortArray pcm) {
+  if (pcm == nullptr) return JNI_FALSE;
+  const jsize length = env->GetArrayLength(pcm);
+  if (length <= 0) return JNI_FALSE;
+  std::vector<std::int16_t> samples(static_cast<std::size_t>(length));
+  env->GetShortArrayRegion(pcm, 0, length, reinterpret_cast<jshort*>(samples.data()));
+  if (env->ExceptionCheck()) return JNI_FALSE;
+
+  std::lock_guard<std::mutex> guard(soundboardMutex);
+  std::size_t start = static_cast<std::size_t>(std::ceil(soundboardPosition));
+  if (start > kSoundboardSampleRate && start > soundboardTimeline.size() / 2U) {
+    const std::size_t consumed = static_cast<std::size_t>(soundboardPosition);
+    soundboardTimeline.erase(soundboardTimeline.begin(), soundboardTimeline.begin() + consumed);
+    soundboardPosition -= static_cast<double>(consumed);
+    start = static_cast<std::size_t>(std::ceil(soundboardPosition));
+  }
+  if (soundboardTimeline.size() < start + samples.size()) {
+    soundboardTimeline.resize(start + samples.size(), 0);
+  }
+  for (std::size_t i = 0; i < samples.size(); ++i) {
+    soundboardTimeline[start + i] += samples[i];
+  }
+  return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_vector_lineextension_hooks_NativeCallBridge_nativeClearSoundboard(JNIEnv*, jclass) {
+  std::lock_guard<std::mutex> guard(soundboardMutex);
+  soundboardTimeline.clear();
+  soundboardPosition = 0.0;
+}
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_dev_vector_lineextension_hooks_NativeCallBridge_nativeSetParticipantVolume(
@@ -150,20 +349,75 @@ Java_dev_vector_lineextension_hooks_NativeCallBridge_nativeSetParticipantVolume(
     return JNI_FALSE;
   }
   const float db = percentToDb(multiplier);
+  const std::string targetUser = userPart(id);
+  const std::string targetService = servicePart(id);
   bool queued = false;
   const int count = api.arrayCount(streams);
-  __android_log_print(ANDROID_LOG_INFO, kTag, "Trying participant volume on %d streams", count);
+  std::vector<void*> audioStreams;
+  std::vector<std::string> serviceIds;
+  std::vector<void*> matchingStreams;
+  audioStreams.reserve(count > 0 ? static_cast<std::size_t>(count) : 0U);
+  __android_log_print(ANDROID_LOG_INFO, kTag, "Resolving participant on %d streams", count);
   for (int index = 0; index < count; ++index) {
     void* stream = api.arrayGet(streams, index);
     if (stream == nullptr || api.streamKind(stream) != kAudioMediaKind) continue;
-    // The native function validates RX/mix streams. Supplying the participant ID lets LINE's
-    // own user-to-SSRC callback resolve the current channel, including after reconnects.
-    if (api.setTalkerLevel(stream, id, "", true, db, nullptr, nullptr, nullptr)) queued = true;
+    audioStreams.push_back(stream);
+    const char* sourceUserId = api.streamSourceUserId(stream);
+    const char* sourceServiceId = api.streamSourceServiceId(stream);
+    addUnique(&serviceIds, sourceServiceId);
+    const std::string embeddedService = servicePart(sourceUserId);
+    addUnique(&serviceIds, embeddedService.c_str());
+    if (sameUser(sourceUserId, id)) matchingStreams.push_back(stream);
+    __android_log_print(
+        ANDROID_LOG_DEBUG, kTag, "stream[%d] dir=%d sourceUser=%s sourceService=%s match=%d",
+        index, api.streamDirection(stream), sourceUserId != nullptr ? sourceUserId : "<none>",
+        sourceServiceId != nullptr ? sourceServiceId : "<none>", sameUser(sourceUserId, id));
+  }
+  addUnique(&serviceIds, targetService.c_str());
+
+  // A group participant is identified by LINE as userId + serviceId. Prefer the exact receive
+  // stream metadata, then try the service IDs advertised by the other audio streams. The latter
+  // is needed for server-mixed group calls where the mixer stream itself has no source user.
+  for (void* stream : matchingStreams) {
+    const char* sourceUserId = api.streamSourceUserId(stream);
+    const char* sourceServiceId = api.streamSourceServiceId(stream);
+    const std::string sourceUser = userPart(sourceUserId);
+    std::string sourceService =
+        sourceServiceId != nullptr ? std::string(sourceServiceId) : std::string();
+    if (sourceService.empty()) sourceService = servicePart(sourceUserId);
+    if (!sourceUser.empty() && !sourceService.empty() &&
+        api.setTalkerLevel(stream, sourceUser.c_str(), sourceService.c_str(), true, db, nullptr, nullptr,
+                           nullptr)) {
+      queued = true;
+    }
+  }
+  for (void* stream : audioStreams) {
+    for (const std::string& serviceId : serviceIds) {
+      if (api.setTalkerLevel(stream, targetUser.c_str(), serviceId.c_str(), true, db, nullptr, nullptr,
+                             nullptr)) {
+        queued = true;
+      }
+    }
+  }
+
+  // Keep a compatibility fallback for call types whose stream metadata omits a service ID.
+  if (serviceIds.empty()) {
+    for (void* stream : audioStreams) {
+      if (api.setTalkerLevel(stream, targetUser.c_str(), "", true, db, nullptr, nullptr, nullptr)) {
+        queued = true;
+      }
+    }
   }
   env->ReleaseStringUTFChars(participant_id, id);
   api.arrayRelease(streams);
   if (!queued) {
-    __android_log_print(ANDROID_LOG_WARN, kTag, "No RX stream accepted participant volume");
+    __android_log_print(ANDROID_LOG_WARN, kTag,
+                        "No RX stream accepted participant volume (audio=%zu matching=%zu services=%zu)",
+                        audioStreams.size(), matchingStreams.size(), serviceIds.size());
+  } else {
+    __android_log_print(ANDROID_LOG_INFO, kTag,
+                        "Participant volume queued (audio=%zu matching=%zu services=%zu)",
+                        audioStreams.size(), matchingStreams.size(), serviceIds.size());
   }
   return queued ? JNI_TRUE : JNI_FALSE;
 }

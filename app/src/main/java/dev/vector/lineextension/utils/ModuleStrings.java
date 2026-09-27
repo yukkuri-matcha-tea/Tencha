@@ -154,6 +154,8 @@ public class ModuleStrings {
       "LINEの通話エンジンが計測した録音レベルを通話画面に表示します。マイクの音量設定は変更しません。";
   public static final String OPT_PARTICIPANT_VOLUME_LABEL = "参加者ごとの音量を調整";
   public static final String OPT_PARTICIPANT_VOLUME_DESC = "1対1通話とグループ通話で、参加者ごとの受信音量を0〜200%に調整します。";
+  public static final String OPT_SOUNDBOARD_LABEL = "サウンドボード";
+  public static final String OPT_SOUNDBOARD_DESC = "登録した音声を通話の送信音声へ混ぜ、相手に自分の発話として流します。";
   public static final String OPT_SELECT_ALL_IN_EDIT_MODE_LABEL = "メッセージ削除画面に全選択ボタンを追加";
   public static final String OPT_SELECT_ALL_IN_EDIT_MODE_DESC =
       "メッセージ削除画面の下部に、すべてのメッセージを選択・選択解除できるボタンを追加します。";
@@ -172,6 +174,8 @@ public class ModuleStrings {
   public static final String OPT_OPEN_URL_IN_DEFAULT_BROWSER_LABEL = "URLをデフォルトブラウザで開く";
   public static final String OPT_OPEN_URL_IN_DEFAULT_BROWSER_DESC =
       "URLをアプリ内ブラウザではなく、システムのデフォルトブラウザで開くようにします。";
+  public static final String OPT_MESSAGE_WEB_ACTIONS_LABEL = "メッセージを検索・翻訳";
+  public static final String OPT_MESSAGE_WEB_ACTIONS_DESC = "メッセージ長押しメニューにGoogle検索と翻訳を追加します。";
 
   public static final String OPT_REMOVE_ADS_LABEL = "広告を非表示";
   public static final String OPT_REMOVE_ADS_DESC = "トークリスト上部やホーム画面などに表示される広告を非表示にします。";

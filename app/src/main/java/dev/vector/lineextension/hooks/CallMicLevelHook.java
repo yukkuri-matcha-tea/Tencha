@@ -14,6 +14,7 @@ import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
+import android.widget.Toast;
 import dev.vector.lineextension.LoadParam;
 import dev.vector.lineextension.Main;
 import dev.vector.lineextension.Reflect;
@@ -44,6 +45,7 @@ public final class CallMicLevelHook implements BaseHook {
 
   private static volatile WeakReference<Object> audioControlRef = new WeakReference<>(null);
   private static final Map<Activity, Meter> meters = new WeakHashMap<>();
+  private static final Handler UI_HANDLER = new Handler(Looper.getMainLooper());
   private static volatile Method setVolumeMethod;
   private static volatile Object callSettingsMenuItem;
   private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -58,8 +60,12 @@ public final class CallMicLevelHook implements BaseHook {
     final TextView participantStatus;
     final SeekBar fallbackVolumeBar;
     final TextView fallbackVolumeLabel;
+    final LinearLayout soundboardList;
+    final TextView soundboardStatus;
     final Runnable update;
     final Map<String, ParticipantRow> participantRows = new LinkedHashMap<>();
+    final Map<String, TextView> soundboardButtons = new LinkedHashMap<>();
+    final List<SoundboardPlayback> soundboardPlaybacks = new ArrayList<>();
     final Set<String> modifiedParticipants = new HashSet<>();
     long appliedStream;
     boolean fallbackVolumeApplied;
@@ -75,6 +81,8 @@ public final class CallMicLevelHook implements BaseHook {
         TextView participantStatus,
         SeekBar fallbackVolumeBar,
         TextView fallbackVolumeLabel,
+        LinearLayout soundboardList,
+        TextView soundboardStatus,
         Runnable update) {
       this.parent = parent;
       this.root = root;
@@ -85,7 +93,17 @@ public final class CallMicLevelHook implements BaseHook {
       this.participantStatus = participantStatus;
       this.fallbackVolumeBar = fallbackVolumeBar;
       this.fallbackVolumeLabel = fallbackVolumeLabel;
+      this.soundboardList = soundboardList;
+      this.soundboardStatus = soundboardStatus;
       this.update = update;
+    }
+  }
+
+  private static final class SoundboardPlayback {
+    final String clipId;
+
+    SoundboardPlayback(String clipId) {
+      this.clipId = clipId;
     }
   }
 
@@ -115,7 +133,9 @@ public final class CallMicLevelHook implements BaseHook {
 
   @Override
   public void hook(VectorConfig config, LoadParam lpparam) {
-    if (!(config.callMicMeter.enabled || config.participantVolume.enabled)) return;
+    if (!(config.callMicMeter.enabled
+        || config.participantVolume.enabled
+        || config.soundboard.enabled)) return;
     if (config.participantVolume.enabled) {
       setVolumeMethod =
           Reflect.findMethodExact(
@@ -132,6 +152,9 @@ public final class CallMicLevelHook implements BaseHook {
         chain -> {
           Object result = chain.proceed();
           audioControlRef = new WeakReference<>(chain.getThisObject());
+          if (Main.options.soundboard.enabled) {
+            NativeCallBridge.prepareSoundboard(Vector.currentApplication());
+          }
           return result;
         });
     Vector.module
@@ -171,7 +194,9 @@ public final class CallMicLevelHook implements BaseHook {
   }
 
   private void show(Activity activity) {
-    if (!(Main.options.callMicMeter.enabled || Main.options.participantVolume.enabled)
+    if (!(Main.options.callMicMeter.enabled
+            || Main.options.participantVolume.enabled
+            || Main.options.soundboard.enabled)
         || activity.isFinishing()
         || meters.containsKey(activity)) {
       return;
@@ -210,6 +235,19 @@ public final class CallMicLevelHook implements BaseHook {
     header.addView(close, new LinearLayout.LayoutParams(-2, -2));
     root.addView(header);
 
+    ScrollView controlScroll = new ScrollView(activity);
+    controlScroll.setFillViewport(false);
+    controlScroll.setClipToPadding(false);
+    controlScroll.setVerticalScrollBarEnabled(true);
+    LinearLayout controls = new LinearLayout(activity);
+    controls.setOrientation(LinearLayout.VERTICAL);
+    controls.setPadding(0, dp(activity, 8), 0, dp(activity, 4));
+    controlScroll.addView(
+        controls,
+        new ScrollView.LayoutParams(
+            ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
+    root.addView(controlScroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+
     TextView label = null;
     ProgressBar bar = null;
     if (Main.options.callMicMeter.enabled) {
@@ -217,7 +255,7 @@ public final class CallMicLevelHook implements BaseHook {
       label.setText("マイク —");
       label.setTextColor(Color.WHITE);
       label.setTextSize(13);
-      root.addView(label);
+      controls.addView(label);
 
       bar = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
       bar.setMax(100);
@@ -225,7 +263,7 @@ public final class CallMicLevelHook implements BaseHook {
       LinearLayout.LayoutParams barParams =
           new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(activity, 4));
       barParams.topMargin = dp(activity, 5);
-      root.addView(bar, barParams);
+      controls.addView(bar, barParams);
     }
 
     TextView participantStatus = null;
@@ -241,9 +279,9 @@ public final class CallMicLevelHook implements BaseHook {
       if (label != null) {
         LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(-2, -2);
         labelParams.topMargin = dp(activity, 12);
-        root.addView(participantStatus, labelParams);
+        controls.addView(participantStatus, labelParams);
       } else {
-        root.addView(participantStatus);
+        controls.addView(participantStatus);
       }
 
       participantList = new LinearLayout(activity);
@@ -251,11 +289,13 @@ public final class CallMicLevelHook implements BaseHook {
       participantScroll = new ScrollView(activity);
       participantScroll.setFillViewport(false);
       participantScroll.setClipToPadding(false);
+      participantScroll.setNestedScrollingEnabled(false);
+      participantScroll.setVerticalScrollBarEnabled(false);
       participantScroll.addView(
           participantList,
           new ScrollView.LayoutParams(
               ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
-      root.addView(
+      controls.addView(
           participantScroll,
           new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(activity, 72)));
 
@@ -264,19 +304,36 @@ public final class CallMicLevelHook implements BaseHook {
       fallbackVolumeLabel.setTextColor(Color.WHITE);
       fallbackVolumeLabel.setTextSize(13);
       fallbackVolumeLabel.setVisibility(View.GONE);
-      root.addView(fallbackVolumeLabel);
+      controls.addView(fallbackVolumeLabel);
       fallbackVolumeBar = new SeekBar(activity);
       fallbackVolumeBar.setMax(200);
       fallbackVolumeBar.setProgress(100);
       fallbackVolumeBar.setVisibility(View.GONE);
-      root.addView(
+      controls.addView(
           fallbackVolumeBar,
           new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, -2));
     }
 
+    TextView soundboardStatus = null;
+    LinearLayout soundboardList = null;
+    if (Main.options.soundboard.enabled) {
+      soundboardStatus = new TextView(activity);
+      soundboardStatus.setText("サウンドボード");
+      soundboardStatus.setTextColor(Color.WHITE);
+      soundboardStatus.setTextSize(14);
+      LinearLayout.LayoutParams soundTitleParams = new LinearLayout.LayoutParams(-1, -2);
+      soundTitleParams.topMargin = dp(activity, 12);
+      controls.addView(soundboardStatus, soundTitleParams);
+
+      soundboardList = new LinearLayout(activity);
+      soundboardList.setOrientation(LinearLayout.VERTICAL);
+      controls.addView(soundboardList, new LinearLayout.LayoutParams(-1, -2));
+    }
+
     FrameLayout.LayoutParams params =
         new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            Math.round(activity.getResources().getDisplayMetrics().heightPixels * 0.82f));
     params.gravity = Gravity.BOTTOM;
     parent.addView(root, params);
     root.setVisibility(View.GONE);
@@ -310,7 +367,9 @@ public final class CallMicLevelHook implements BaseHook {
         new Runnable() {
           @Override
           public void run() {
-            if (!(Main.options.callMicMeter.enabled || Main.options.participantVolume.enabled)) {
+            if (!(Main.options.callMicMeter.enabled
+                || Main.options.participantVolume.enabled
+                || Main.options.soundboard.enabled)) {
               hide(activity);
               return;
             }
@@ -336,7 +395,7 @@ public final class CallMicLevelHook implements BaseHook {
                 rosterStatus.setText(participants.isEmpty() ? "調整できる参加者はいません" : "参加者ごとの音量");
                 rosterStatus.setVisibility(View.VISIBLE);
                 rosterScroll.setVisibility(participants.isEmpty() ? View.GONE : View.VISIBLE);
-                int height = Math.min(dp(activity, 336), dp(activity, 72) * participants.size());
+                int height = dp(activity, 72) * participants.size();
                 LinearLayout.LayoutParams scrollParams =
                     (LinearLayout.LayoutParams) rosterScroll.getLayoutParams();
                 if (scrollParams.height != height && height > 0) {
@@ -364,7 +423,8 @@ public final class CallMicLevelHook implements BaseHook {
             boolean hasVisibleControl =
                 Main.options.callMicMeter.enabled
                     || (rosterScroll != null && rosterScroll.getVisibility() == View.VISIBLE)
-                    || (peerBar != null && peerBar.getVisibility() == View.VISIBLE);
+                    || (peerBar != null && peerBar.getVisibility() == View.VISIBLE)
+                    || Main.options.soundboard.enabled;
             root.setVisibility(meter.controlsOpen && hasVisibleControl ? View.VISIBLE : View.GONE);
             mainHandler.postDelayed(this, UPDATE_INTERVAL_MS);
           }
@@ -380,8 +440,13 @@ public final class CallMicLevelHook implements BaseHook {
             participantStatus,
             fallbackVolumeBar,
             fallbackVolumeLabel,
+            soundboardList,
+            soundboardStatus,
             update);
     meters.put(activity, meter);
+    if (soundboardList != null && soundboardStatus != null) {
+      populateSoundboard(activity, meter);
+    }
     if (fallbackVolumeBar != null && fallbackVolumeLabel != null) {
       fallbackVolumeBar.setOnSeekBarChangeListener(
           new SeekBar.OnSeekBarChangeListener() {
@@ -414,8 +479,105 @@ public final class CallMicLevelHook implements BaseHook {
     Meter meter = meters.remove(activity);
     if (meter == null) return;
     mainHandler.removeCallbacks(meter.update);
+    stopAllSoundboardPlaybacks(meter);
     resetAllVolumes(meter);
     if (meter.root.getParent() == meter.parent) meter.parent.removeView(meter.root);
+  }
+
+  private static void populateSoundboard(Activity activity, Meter meter) {
+    meter.soundboardList.removeAllViews();
+    meter.soundboardButtons.clear();
+    List<SoundboardStore.Clip> clips = SoundboardStore.load(activity);
+    if (clips.isEmpty()) {
+      meter.soundboardStatus.setText("サウンドボード — 音声未登録");
+      TextView help = new TextView(activity);
+      help.setText("LINE設定 → Tencha → チャット → サウンドボード音声から追加");
+      help.setTextColor(0xFFBDBDBD);
+      help.setTextSize(12);
+      help.setPadding(0, dp(activity, 6), 0, 0);
+      meter.soundboardList.addView(help);
+      return;
+    }
+    meter.soundboardStatus.setText("サウンドボード");
+    for (SoundboardStore.Clip clip : clips) {
+      TextView button = soundboardButton(activity, "▶  " + clip.name);
+      button.setOnClickListener(view -> playSoundboard(activity, meter, clip));
+      meter.soundboardButtons.put(clip.id, button);
+      meter.soundboardList.addView(button);
+    }
+  }
+
+  private static TextView soundboardButton(Activity activity, String text) {
+    TextView button = new TextView(activity);
+    button.setText(text);
+    button.setTextColor(Color.WHITE);
+    button.setTextSize(14);
+    button.setGravity(Gravity.CENTER_VERTICAL);
+    button.setSingleLine(true);
+    button.setEllipsize(android.text.TextUtils.TruncateAt.END);
+    button.setPadding(dp(activity, 14), 0, dp(activity, 14), 0);
+    GradientDrawable background = new GradientDrawable();
+    background.setColor(0xFF333333);
+    background.setCornerRadius(dp(activity, 12));
+    button.setBackground(background);
+    LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(activity, 46));
+    params.topMargin = dp(activity, 7);
+    button.setLayoutParams(params);
+    return button;
+  }
+
+  private static void playSoundboard(Activity activity, Meter meter, SoundboardStore.Clip clip) {
+    try {
+      short[] pcm = SoundboardStore.readPcm16(clip);
+      if (!NativeCallBridge.enqueueSoundboard(activity, pcm)) {
+        Toast.makeText(activity, "音声を送信できません", Toast.LENGTH_SHORT).show();
+        return;
+      }
+      SoundboardLocalPlayer.enqueue(pcm);
+      SoundboardPlayback playback = new SoundboardPlayback(clip.id);
+      meter.soundboardPlaybacks.add(playback);
+      updateSoundboardButtons(meter);
+      UI_HANDLER.postDelayed(
+          () -> stopSoundboardPlayback(meter, playback), SoundboardStore.durationMs(clip) + 150L);
+    } catch (Throwable error) {
+      Vector.log("Tencha: soundboard playback failed", error);
+      Toast.makeText(activity, "音声を送信できません", Toast.LENGTH_SHORT).show();
+    }
+  }
+
+  private static void stopSoundboardPlayback(Meter meter, SoundboardPlayback playback) {
+    if (!meter.soundboardPlaybacks.remove(playback)) return;
+    updateSoundboardButtons(meter);
+  }
+
+  private static void stopAllSoundboardPlaybacks(Meter meter) {
+    meter.soundboardPlaybacks.clear();
+    NativeCallBridge.clearSoundboard();
+    SoundboardLocalPlayer.clear();
+    updateSoundboardButtons(meter);
+  }
+
+  private static void updateSoundboardButtons(Meter meter) {
+    for (Map.Entry<String, TextView> entry : meter.soundboardButtons.entrySet()) {
+      int activeCount = 0;
+      for (SoundboardPlayback playback : meter.soundboardPlaybacks) {
+        if (entry.getKey().equals(playback.clipId)) activeCount++;
+      }
+      boolean active = activeCount > 0;
+      TextView button = entry.getValue();
+      Object original = button.getTag();
+      String name =
+          original instanceof String
+              ? (String) original
+              : button.getText().toString().replace("▶  ", "");
+      if (!(original instanceof String)) button.setTag(name);
+      button.setText(active ? "▶  送信中 ×" + activeCount + "・" + name : "▶  " + name);
+      GradientDrawable background = new GradientDrawable();
+      background.setColor(active ? 0xFF06C755 : 0xFF333333);
+      background.setCornerRadius(dp(button.getContext(), 12));
+      if (active) background.setStroke(dp(button.getContext(), 2), 0xFFFFFFFF);
+      button.setBackground(background);
+    }
   }
 
   private void installCallSettingsMenuItem(ClassLoader classLoader) {
@@ -545,9 +707,12 @@ public final class CallMicLevelHook implements BaseHook {
       Object model = getFieldAny(session, "f151256l", "l");
       if (model == null) return null;
       String selfId = String.valueOf(getFieldAny(model, "f239916o", "o"));
-      Object orderedRoster = getFieldAny(model, "F");
-      if (orderedRoster == null) return null;
-      Object entries = getFieldAny(orderedRoster, "f239928a", "a");
+      // f239925x is the StateFlow consumed by LINE's in-call voice overlay. Its current value is
+      // the participants actually present in this call. Model.F is the wider group roster and can
+      // contain users who never joined or already left.
+      Object activeParticipants = getFieldAny(model, "f239925x", "x");
+      if (activeParticipants == null) return null;
+      Object entries = Reflect.callMethod(activeParticipants, "getValue");
       if (!(entries instanceof List)) return null;
       LinkedHashMap<String, Participant> participants = new LinkedHashMap<>();
       for (Object entry : (List<?>) entries) {
@@ -776,7 +941,7 @@ public final class CallMicLevelHook implements BaseHook {
     }
   }
 
-  private static int dp(Activity activity, int value) {
-    return (int) (value * activity.getResources().getDisplayMetrics().density + 0.5f);
+  private static int dp(android.content.Context context, int value) {
+    return (int) (value * context.getResources().getDisplayMetrics().density + 0.5f);
   }
 }

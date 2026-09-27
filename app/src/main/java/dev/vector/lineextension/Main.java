@@ -121,6 +121,9 @@ public class Main extends XposedModule {
       if (options.openUrlInDefaultBrowser.enabled) {
         applyHook(new OpenInExternalBrowserHook(), lpparam);
       }
+      if (options.messageWebActions.enabled) {
+        applyHook(new MessageWebActionsHook(), lpparam);
+      }
       if (options.highQualityPhoto.enabled) {
         applyHook(new ImageQuality(), lpparam);
       }
@@ -137,7 +140,9 @@ public class Main extends XposedModule {
       if (options.showSecondsInChatTime.enabled) {
         applyHook(new ChatTimestampSeconds(), lpparam);
       }
-      if (options.callMicMeter.enabled || options.participantVolume.enabled) {
+      if (options.callMicMeter.enabled
+          || options.participantVolume.enabled
+          || options.soundboard.enabled) {
         applyHook(new CallMicLevelHook(), lpparam);
       }
       if (options.selectAllInEditMode.enabled) {

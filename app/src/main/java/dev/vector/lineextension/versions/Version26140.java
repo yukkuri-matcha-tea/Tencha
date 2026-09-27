@@ -117,6 +117,16 @@ public final class Version26140 {
     v.messageEditHistory.methodMenuActionAccessor = "d";
     v.messageEditHistory.menuActionLambdaClass = "b81.f$b";
 
+    // Message long-press popup. Raw DEX field names are used here; JADX displays aliases.
+    v.messageContextMenu.dialogClass = "kh1.h1";
+    v.messageContextMenu.showCoroutineClass = "kh1.j1";
+    v.messageContextMenu.fieldDialog = "b";
+    v.messageContextMenu.fieldPopupHolder = "k";
+    v.messageContextMenu.fieldPopupWindow = "i";
+    v.messageContextMenu.fieldParams = "e";
+    v.messageContextMenu.fieldTextParams = "e";
+    v.messageContextMenu.fieldText = "a";
+
     // Chat-tab header state and its button models.
     v.talkTabHeader.chatTabHeaderStateClass = "qz1.f";
     v.talkTabHeader.iconTypeClass = "q11.n";

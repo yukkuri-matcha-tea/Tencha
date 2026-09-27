@@ -58,6 +58,7 @@ public class SettingsUIInjector implements BaseHook {
   private static final int PICK_FONT_CODE = 0x4C59;
   private static final int PICK_RESTORE_DB_CODE = 0x4C5A;
   private static final int EXPORT_CHAT_BACKUP_CODE = 0x4C5B;
+  private static final int PICK_SOUNDBOARD_CODE = 0x4C5C;
   private static final VectorConfig.Category[] DISPLAY_CATEGORIES = {
     VectorConfig.Category.PRIVACY,
     VectorConfig.Category.CHAT,
@@ -373,6 +374,9 @@ public class SettingsUIInjector implements BaseHook {
     } else if (requestCode == EXPORT_CHAT_BACKUP_CODE) {
       handleChatBackupExportPicked(chain);
       return null;
+    } else if (requestCode == PICK_SOUNDBOARD_CODE) {
+      handleSoundboardPicked(chain);
+      return null;
     }
     return chain.proceed();
   }
@@ -428,6 +432,30 @@ public class SettingsUIInjector implements BaseHook {
     Uri destination = ((Intent) chain.getArg(2)).getData();
     if (destination == null) return;
     BackupRestoreHook.exportInternalBackup((Context) chain.getThisObject(), destination);
+  }
+
+  private void handleSoundboardPicked(XposedInterface.Chain chain) {
+    if ((int) chain.getArg(1) != Activity.RESULT_OK || chain.getArg(2) == null) return;
+    Uri source = ((Intent) chain.getArg(2)).getData();
+    if (source == null) return;
+    Activity host = (Activity) chain.getThisObject();
+    Toast.makeText(host, "音声を変換しています…", Toast.LENGTH_SHORT).show();
+    new Thread(
+            () -> {
+              try {
+                SoundboardStore.Clip clip = SoundboardStore.importAudio(host, source);
+                host.runOnUiThread(
+                    () -> Toast.makeText(host, clip.name + " を追加しました", Toast.LENGTH_SHORT).show());
+              } catch (Throwable error) {
+                Vector.log("Tencha: soundboard import failed: " + error);
+                host.runOnUiThread(
+                    () ->
+                        Toast.makeText(host, "音声を追加できません: " + error.getMessage(), Toast.LENGTH_LONG)
+                            .show());
+              }
+            },
+            "TenchaSoundboardImport")
+        .start();
   }
 
   private Object onHostDestroy(XposedInterface.Chain chain) throws Throwable {
@@ -1170,6 +1198,7 @@ public class SettingsUIInjector implements BaseHook {
         lastSection = i.section;
       }
       injectItemRow(infl, itemParent, ctx, i, currentCfg, toggleType, statusEnum);
+      if ("soundboard".equals(i.key)) injectSoundboardManagerRow(infl, itemParent, ctx);
     }
     if (developerItems != null) {
       parent.addView(developerItems);
@@ -1179,6 +1208,66 @@ public class SettingsUIInjector implements BaseHook {
               finalDeveloperItems.setVisibility(
                   SettingsStore.get("developer_mode", false) ? View.VISIBLE : View.GONE));
     }
+  }
+
+  private void injectSoundboardManagerRow(LayoutInflater infl, LinearLayout parent, Context ctx) {
+    List<SoundboardStore.Clip> clips = SoundboardStore.load(ctx);
+    injectInfoRow(
+        infl,
+        parent,
+        ctx,
+        "サウンドボード音声",
+        clips.isEmpty() ? "音声を追加" : clips.size() + "件登録済み",
+        true,
+        null,
+        view -> openSoundboardManager(ctx));
+    tagLastChild(parent, "サウンドボード 音声 追加 削除");
+  }
+
+  private void openSoundboardManager(Context ctx) {
+    List<SoundboardStore.Clip> clips = SoundboardStore.load(ctx);
+    String[] choices = new String[clips.size() + 1];
+    choices[0] = "＋ 音声を追加";
+    for (int i = 0; i < clips.size(); i++) choices[i + 1] = clips.get(i).name;
+    AlertDialog dialog =
+        new AlertDialog.Builder(ctx, LineTheme.dialogTheme(ctx))
+            .setTitle("サウンドボード音声")
+            .setItems(
+                choices,
+                (d, which) -> {
+                  if (which == 0) {
+                    openSoundboardPicker(ctx);
+                    return;
+                  }
+                  SoundboardStore.Clip clip = clips.get(which - 1);
+                  LineTheme.applyDialogColors(
+                      new AlertDialog.Builder(ctx, LineTheme.dialogTheme(ctx))
+                          .setTitle(clip.name)
+                          .setMessage("この音声を削除しますか？")
+                          .setPositiveButton(
+                              "削除",
+                              (confirm, button) -> {
+                                SoundboardStore.remove(ctx, clip);
+                                Toast.makeText(ctx, "削除しました", Toast.LENGTH_SHORT).show();
+                              })
+                          .setNegativeButton(ModuleStrings.SETTINGS_CANCEL, null)
+                          .show(),
+                      ctx);
+                })
+            .setNegativeButton(ModuleStrings.SETTINGS_CANCEL, null)
+            .create();
+    dialog.show();
+    LineTheme.applyDialogColors(dialog, ctx);
+  }
+
+  private void openSoundboardPicker(Context ctx) {
+    Activity host = resolveActivity(ctx);
+    if (host == null) return;
+    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+    intent.addCategory(Intent.CATEGORY_OPENABLE);
+    intent.setType("audio/*");
+    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+    host.startActivityForResult(intent, PICK_SOUNDBOARD_CODE);
   }
 
   private void injectSectionHeader(LayoutInflater infl, LinearLayout parent, String text) {

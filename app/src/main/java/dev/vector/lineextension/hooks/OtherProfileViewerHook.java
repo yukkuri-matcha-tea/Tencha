@@ -33,6 +33,7 @@ import dev.vector.lineextension.Reflect;
 import dev.vector.lineextension.SettingsStore;
 import dev.vector.lineextension.Vector;
 import dev.vector.lineextension.VectorConfig;
+import dev.vector.lineextension.utils.LineTheme;
 import dev.vector.lineextension.utils.ModuleStrings;
 import java.io.OutputStream;
 import java.lang.reflect.Constructor;
@@ -202,6 +203,7 @@ public final class OtherProfileViewerHook implements BaseHook {
     row.setTag(MENU_TAG);
     TextView title = row.findViewById(id(activity, "id", "title"));
     title.setText(ModuleStrings.PROFILE_OBJECT_MODE);
+    title.setTextColor(popupTextColor(activity, root, title));
     row.setOnClickListener(
         v -> {
           try {
@@ -256,8 +258,9 @@ public final class OtherProfileViewerHook implements BaseHook {
     int layoutId = id(activity, "layout", "userprofile_more_options_popup_item");
     View row = LayoutInflater.from(activity).inflate(layoutId, root, false);
     row.setTag(MENU_TAG);
-    ((TextView) row.findViewById(id(activity, "id", "title")))
-        .setText(ModuleStrings.PROFILE_OBJECT_MODE);
+    TextView title = row.findViewById(id(activity, "id", "title"));
+    title.setText(ModuleStrings.PROFILE_OBJECT_MODE);
+    title.setTextColor(popupTextColor(activity, root, title));
     row.setOnClickListener(
         v -> {
           window.dismiss();
@@ -590,17 +593,20 @@ public final class OtherProfileViewerHook implements BaseHook {
         labels.add("" + layer++ + "  " + (type == null ? "OBJECT" : type.toString()));
         selectable.add(object);
       }
-      new AlertDialog.Builder(state.activity)
-          .setTitle("オブジェクト一覧")
-          .setItems(
-              labels.toArray(new String[0]),
-              (dialog, which) -> {
-                Object object = selectable.get(which);
-                String id = (String) Reflect.getObjectField(object, "a");
-                Reflect.callMethod(state.decoViewModel, "D7", id);
-              })
-          .setNegativeButton(ModuleStrings.COMMON_CLOSE, null)
-          .show();
+      AlertDialog dialog =
+          new AlertDialog.Builder(state.activity, LineTheme.dialogTheme(state.activity))
+              .setTitle("オブジェクト一覧")
+              .setItems(
+                  labels.toArray(new String[0]),
+                  (ignored, which) -> {
+                    Object object = selectable.get(which);
+                    String id = (String) Reflect.getObjectField(object, "a");
+                    Reflect.callMethod(state.decoViewModel, "D7", id);
+                  })
+              .setNegativeButton(ModuleStrings.COMMON_CLOSE, null)
+              .create();
+      dialog.setOnShowListener(ignored -> LineTheme.applyDialogColors(dialog, state.activity));
+      dialog.show();
     } catch (Throwable t) {
       Vector.log("Tencha: object list failed: " + t);
     }
@@ -887,6 +893,21 @@ public final class OtherProfileViewerHook implements BaseHook {
     button.setGravity(Gravity.CENTER);
     button.setBackgroundColor(0x66000000);
     return button;
+  }
+
+  /** Uses the exact color of LINE's neighboring popup row when available. */
+  private static int popupTextColor(Context context, ViewGroup root, TextView injectedTitle) {
+    int titleId = id(context, "id", "title");
+    if (titleId != 0) {
+      for (int i = 0; i < root.getChildCount(); i++) {
+        View child = root.getChildAt(i);
+        TextView nativeTitle = child.findViewById(titleId);
+        if (nativeTitle != null && nativeTitle != injectedTitle) {
+          return nativeTitle.getCurrentTextColor();
+        }
+      }
+    }
+    return LineTheme.primaryTextColor(context);
   }
 
   private static int dp(Context context, int value) {

@@ -66,6 +66,7 @@ public class LineVersion {
     public ChatTimestamp chatTimestamp = new ChatTimestamp();
     public ChatEditSelectAll chatEditSelectAll = new ChatEditSelectAll();
     public MessageEditHistory messageEditHistory = new MessageEditHistory();
+    public MessageContextMenu messageContextMenu = new MessageContextMenu();
     public Camera camera = new Camera();
     public Iab iab = new Iab();
     public HomeTab homeTab = new HomeTab();
@@ -145,6 +146,18 @@ public class LineVersion {
       public String menuMessageDataField = "";
       public String menuMessageIdField = "";
       public String menuEditedFlagField = "";
+    }
+
+    public static class MessageContextMenu {
+      public String dialogClass = "";
+      public String showCoroutineClass = "";
+      public String methodInvokeSuspend = "invokeSuspend";
+      public String fieldDialog = "";
+      public String fieldPopupHolder = "";
+      public String fieldPopupWindow = "";
+      public String fieldParams = "";
+      public String fieldTextParams = "";
+      public String fieldText = "";
     }
 
     public static class Iab {
