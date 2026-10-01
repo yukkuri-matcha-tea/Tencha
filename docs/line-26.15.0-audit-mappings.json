@@ -33,5 +33,11 @@
   {"class":"Llh8/b;","method":"d","descriptor":"(Llh8/e;)J"},
   {"class":"Lek8/a$b;","field":"FIXED","descriptor":"Lek8/a$b;","static":true},
   {"class":"Lgp8/q7;","field":"NONE","descriptor":"Lgp8/q7;","static":true},
-  {"class":"Lmh8/c;","field":"MESSAGE","descriptor":"Lmh8/c;","static":true}
+  {"class":"Lmh8/c;","field":"MESSAGE","descriptor":"Lmh8/c;","static":true},
+  {"class":"Lin8/a2;","method":"b","descriptor":"(Lhn8/u0;Lgp8/de;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;"},
+  {"class":"Lgp8/de;","field":"c","descriptor":"Lgp8/ce;"},
+  {"class":"Lgp8/de;","field":"g","descriptor":"Ljava/lang/String;"},
+  {"class":"Lgp8/de;","field":"h","descriptor":"Ljava/lang/String;"},
+  {"class":"Lgp8/de;","field":"i","descriptor":"Ljava/lang/String;"},
+  {"class":"Lgp8/de;","field":"b","descriptor":"J"}
 ]

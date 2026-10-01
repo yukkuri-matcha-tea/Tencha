@@ -102,7 +102,10 @@ public final class Version26150 {
 
     // Obfuscated packages that shifted as a unit in 26.15.0.
     v.readReceipt.readReceiptManagerClass = "oa3.e";
-    v.unsend.notifiedReadMessageHandlerClass = "in8.y1";
+    // Constructor subscribes to NOTIFIED_READ_MESSAGE. b consumes g/h/i as
+    // chat ID, reader MID and last-read server ID, and b as the event timestamp.
+    // in8.y1 instead handles NOTIFIED_PREMIUMBACKUP_STATE_CHANGED.
+    v.unsend.notifiedReadMessageHandlerClass = "in8.a2";
     v.unsend.notifiedSendReactionHandlerClass = "in8.j2";
     v.unsend.notifiedDestroyMessageHandlerClass = "in8.a1";
     v.unsend.unsendDestroyHandlerClass = "in8.a1";

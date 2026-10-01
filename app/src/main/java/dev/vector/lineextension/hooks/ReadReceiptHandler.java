@@ -49,10 +49,12 @@ public class ReadReceiptHandler implements BaseHook {
           cfg.unsend.methodReadBuffer,
           chain -> {
             Object result = chain.proceed();
-            if (!recordingEnabled()) return result;
-            Object op = chain.getArg(1);
-            if (op == null || op instanceof String) return result;
+            if (!recordingEnabled() || chain.getArgs().size() < 2) return result;
             try {
+              Object op = chain.getArg(1);
+              if (op == null || !cfg.unsend.operationClass.equals(op.getClass().getName())) {
+                return result;
+              }
               Object type = Reflect.getObjectField(op, cfg.unsend.operationTypeField);
               if (type == null
                   || !cfg.readReceipt.operationNotifiedReadName.equals(type.toString())) {
@@ -63,11 +65,15 @@ public class ReadReceiptHandler implements BaseHook {
                   (String) Reflect.getObjectField(op, cfg.unsend.operationParam2Field),
                   (String) Reflect.getObjectField(op, cfg.unsend.operationParam3Field),
                   Reflect.getLongField(op, cfg.unsend.operationCreatedTimeField));
-            } catch (Throwable ignored) {
+            } catch (Throwable error) {
+              Vector.log(
+                  "Tencha: Read history notification failed: " + error.getClass().getSimpleName());
             }
             return result;
           });
-    } catch (Throwable ignored) {
+    } catch (Throwable error) {
+      Vector.log(
+          "Tencha: Read history hook registration failed: " + error.getClass().getSimpleName());
     }
   }
 

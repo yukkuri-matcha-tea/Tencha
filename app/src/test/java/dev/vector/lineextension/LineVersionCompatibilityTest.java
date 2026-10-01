@@ -120,6 +120,20 @@ public class LineVersionCompatibilityTest {
   }
 
   @Test
+  public void line26150ReadHistoryUsesReadNotificationNotPremiumBackup() {
+    LineVersion.Config c = LineVersion.resolveVersion("26.15.0", name -> false);
+    assertEquals("in8.a2", c.unsend.notifiedReadMessageHandlerClass);
+    assertEquals("b", c.unsend.methodReadBuffer);
+    assertEquals("gp8.de", c.unsend.operationClass);
+    assertEquals("NOTIFIED_READ_MESSAGE", c.readReceipt.operationNotifiedReadName);
+    assertEquals("c", c.unsend.operationTypeField);
+    assertEquals("g", c.unsend.operationParam1Field);
+    assertEquals("h", c.unsend.operationParam2Field);
+    assertEquals("i", c.unsend.operationParam3Field);
+    assertEquals("b", c.unsend.operationCreatedTimeField);
+  }
+
+  @Test
   public void unknownVersionFailsClosedEvenWhenOldAnchorsExist() {
     assertNull(LineVersion.resolveVersion("26.16.0", name -> true));
     assertEquals("unsupported", LineVersion.getCompatibilityState());

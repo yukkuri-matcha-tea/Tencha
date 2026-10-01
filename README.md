@@ -8,12 +8,12 @@ LINEヤフー株式会社とは無関係です。LINE更新による非互換、
 
 ## ダウンロード
 
-[GitHub Releases](https://github.com/yukkuri-matcha-tea/Tencha/releases/latest)で配布しています。1.9.0の配布物：
+[GitHub Releases](https://github.com/yukkuri-matcha-tea/Tencha/releases/latest)で配布しています。1.9.1の配布物：
 
-- [root向けAPK](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.0/Tencha-root-1.9.0.apk)
-- [非root向けセット](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.0/Tencha-rootless-kit-1.9.0.zip) — モジュール、LSPatch、作成用スクリプト・説明書
-- [非root向けモジュール単体](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.0/Tencha-rootless-module-1.9.0.apk)
-- [SHA-256チェックサム](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.0/Tencha-1.9.0-SHA256SUMS.txt)
+- [root向けAPK](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.1/Tencha-root-1.9.1.apk)
+- [非root向けセット](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.1/Tencha-rootless-kit-1.9.1.zip) — モジュール、LSPatch、作成用スクリプト・説明書
+- [非root向けモジュール単体](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.1/Tencha-rootless-module-1.9.1.apk)
+- [SHA-256チェックサム](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.1/Tencha-1.9.1-SHA256SUMS.txt)
 
 root向け・非root向けモジュールAPKは同じ内容で、導入方法が異なります。パッチ済みLINE APKは配布しません。
 
@@ -96,6 +96,10 @@ LSPatchで利用者自身のLINE APKにTenchaを組み込んで使用します�
 - GitHub Releasesからの更新。起動時の自動確認は1日1回で、勝手なインストールや常駐処理は行いません
 
 TenchaのバックアップはLINE公式のバックアップ・アカウント引き継ぎの代わりにはなりません。
+
+## 1.9.1の修正
+
+LINE 26.15.0で「既読履歴を記録」が別の通知処理を監視していた問題を修正しました。正しい既読通知からトーク・既読者・最終既読メッセージ・通知時刻を取得します。受信していない通知や、過去の正確な既読時刻を復元する機能ではありません。詳細は[既読履歴の修正記録](docs/read-history-fix-26.15.0.md)を参照してください。
 
 ## 動作確認と制限
 
