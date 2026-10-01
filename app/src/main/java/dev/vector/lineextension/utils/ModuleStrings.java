@@ -159,6 +159,9 @@ public class ModuleStrings {
   public static final String OPT_CALL_TTS_LABEL = "通話中のメッセージ読み上げ";
   public static final String OPT_CALL_TTS_DESC =
       "通常のテキストメッセージをAndroid標準TTSで読み上げます。読み上げ対象と出力先は専用設定で変更できます。";
+  public static final String OPT_INDEPENDENT_CALL_MUTE_LABEL = "ミュート中も追加音声を送信";
+  public static final String OPT_INDEPENDENT_CALL_MUTE_DESC =
+      "ミュート時はマイク音声だけを0にし、サウンドボード・TTSの音声は送信します。注意：自分側でミュート表示でも、相手からはミュートしていないように見える場合があります。OFFではLINE本来のミュート動作になります。変更の反映にはLINEの再起動が必要です。";
   public static final String OPT_SELECT_ALL_IN_EDIT_MODE_LABEL = "メッセージ削除画面に全選択ボタンを追加";
   public static final String OPT_SELECT_ALL_IN_EDIT_MODE_DESC =
       "メッセージ削除画面の下部に、すべてのメッセージを選択・選択解除できるボタンを追加します。";

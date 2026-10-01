@@ -52,6 +52,7 @@ public final class CallMicLevelHook implements BaseHook {
   private static volatile Method setVolumeMethod;
   private static volatile Object callSettingsMenuItem;
   private static final ThreadLocal<Boolean> independentMuteCall = new ThreadLocal<>();
+  private static volatile long independentMuteSession;
   private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
   private static boolean isLine26150() {
@@ -180,7 +181,6 @@ public final class CallMicLevelHook implements BaseHook {
             }
             return result;
           });
-      installIndependentMuteHook(lpparam.classLoader, audioControl);
       try {
         Vector.module
             .hook(Reflect.findMethodExact(audioControl, "G"))
@@ -195,6 +195,12 @@ public final class CallMicLevelHook implements BaseHook {
       }
     } else {
       Vector.log("Tencha: LINE 26.15 audio-engine hooks deferred during call isolation");
+    }
+    // Register only Java interceptors here. Native mixer installation stays lazy;
+    // do not restore the constructor-time patching that raced VoIP startup.
+    if (line26150 || "26.14.0".equals(LineVersion.getResolvedVersionName())) {
+      installIndependentMuteHook(
+          lpparam.classLoader, Reflect.findClass(AUDIO_CONTROL, lpparam.classLoader));
     }
 
     Class<?> callActivity = Reflect.findClass(CALL_ACTIVITY, lpparam.classLoader);
@@ -549,7 +555,8 @@ public final class CallMicLevelHook implements BaseHook {
     Meter meter = meters.remove(activity);
     if (callEnded) {
       CallTtsManager.endCall();
-      if (!isLine26150()) NativeCallBridge.setPhysicalMicMuted(activity, false);
+      // Closing controls or disabling features does not end the native call.
+      // Keep the privacy gate until unmute or release of the actual TX session.
     }
     if (meter == null) return;
     mainHandler.removeCallbacks(meter.update);
@@ -656,7 +663,46 @@ public final class CallMicLevelHook implements BaseHook {
 
   private static void installIndependentMuteHook(ClassLoader loader, Class<?> audioControl) {
     if (!(Main.options.soundboard.enabled || Main.options.callTts.enabled)) return;
+    // This is a startup-time setting, consistent with the settings screen's
+    // restart prompt. Never drop an active mic privacy gate on a live UI toggle.
+    // OFF installs no interception: LINE retains its original mute behavior.
+    if (!Main.options.independentCallMute.enabled) return;
     try {
+      Class<?> session = Reflect.findClass(NATIVE_SESSION, loader);
+      // Resolve and register the TX interception before enabling the outer hook.
+      // Failed mixer installation always leaves LINE's original mute in effect.
+      Vector.module
+          .hook(Reflect.findMethodExact(session, "o", int.class, long.class, boolean.class))
+          .intercept(
+              chain -> {
+                if (IndependentMutePolicy.keepTxAlive(
+                    (Integer) chain.getArg(0),
+                    (Boolean) chain.getArg(2),
+                    Boolean.TRUE.equals(independentMuteCall.get()))) {
+                  Object[] args = chain.getArgs().toArray();
+                  independentMuteSession = (Long) chain.getArg(1);
+                  args[2] = false;
+                  // Explicitly unmute TX, rather than skipping the call: TX may
+                  // already have been muted before this interception.
+                  return chain.proceed(args);
+                }
+                return chain.proceed();
+              });
+      Vector.module
+          .hook(Reflect.findMethodExact(session, "g0", long.class))
+          .intercept(
+              chain -> {
+                long releasedSession = (Long) chain.getArg(0);
+                Object result = chain.proceed();
+                if (releasedSession != 0L
+                    && releasedSession == independentMuteSession
+                    && result instanceof Integer
+                    && (Integer) result == 0) {
+                  independentMuteSession = 0L;
+                  NativeCallBridge.resetPhysicalMicMute();
+                }
+                return result;
+              });
       Vector.module
           .hook(Reflect.findMethodExact(audioControl, "h1", boolean.class, boolean.class))
           .intercept(
@@ -664,25 +710,14 @@ public final class CallMicLevelHook implements BaseHook {
                 boolean muted = (Boolean) chain.getArg(0);
                 Context context = Vector.currentApplication();
                 boolean mixerReady = NativeCallBridge.setPhysicalMicMuted(context, muted);
+                Boolean previous = independentMuteCall.get();
                 independentMuteCall.set(muted && mixerReady);
                 try {
                   return chain.proceed();
                 } finally {
-                  independentMuteCall.remove();
+                  if (previous == null) independentMuteCall.remove();
+                  else independentMuteCall.set(previous);
                 }
-              });
-      Class<?> session = Reflect.findClass(NATIVE_SESSION, loader);
-      Vector.module
-          .hook(Reflect.findMethodExact(session, "o", int.class, long.class, boolean.class))
-          .intercept(
-              chain -> {
-                boolean muted = (Boolean) chain.getArg(2);
-                if (muted && Boolean.TRUE.equals(independentMuteCall.get())) {
-                  // Keep LINE's TX stream alive. The recorder hook replaces only physical mic PCM
-                  // with silence before independently adding TTS and soundboard PCM.
-                  return null;
-                }
-                return chain.proceed();
               });
     } catch (Throwable error) {
       Vector.log("Tencha: independent microphone mute hook unavailable", error);

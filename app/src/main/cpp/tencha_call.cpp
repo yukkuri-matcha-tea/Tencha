@@ -1,4 +1,5 @@
 #include <jni.h>
+#include "call_pcm_mix.h"
 
 #include <android/log.h>
 #include <dlfcn.h>
@@ -6,6 +7,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -163,7 +165,7 @@ std::vector<std::int64_t> soundboardTimeline;
 double soundboardPosition = 0.0;
 std::vector<std::int64_t> ttsTimeline;
 double ttsPosition = 0.0;
-bool physicalMicMuted = false;
+std::atomic<bool> physicalMicMuted{false};
 bool soundboardFormatLogged = false;
 
 using RecordCallback = void (*)(void*, void*);
@@ -180,16 +182,24 @@ int findAndromedaBase(struct dl_phdr_info* info, size_t, void* data) {
 }
 
 void mixSoundboardIntoRecording(void* recorder) {
-  if (recorder == nullptr || !soundboardMutex.try_lock()) return;
-  if (soundboardTimeline.empty() && ttsTimeline.empty() && !physicalMicMuted) {
-    soundboardMutex.unlock();
-    return;
-  }
+  if (recorder == nullptr) return;
   auto* bytes = reinterpret_cast<std::uint8_t*>(recorder);
   const int channelCount = *reinterpret_cast<int*>(bytes + 0x38);
   const int byteCount = *reinterpret_cast<int*>(bytes + 0x3c);
   auto* pcm = *reinterpret_cast<std::int16_t**>(bytes + 0x40);
   const int sampleRate = *reinterpret_cast<int*>(bytes + 0x48);
+  if (byteCount <= 0 || byteCount > 1024 * 1024 || byteCount % sizeof(std::int16_t) != 0 ||
+      pcm == nullptr) return;
+
+  // This privacy gate must run even when enqueueing holds the timeline lock.
+  // Never send captured mic samples simply because try_lock failed.
+  const bool micMuted = physicalMicMuted.load(std::memory_order_acquire);
+  if (micMuted) std::memset(pcm, 0, static_cast<std::size_t>(byteCount));
+  if (!soundboardMutex.try_lock()) return;
+  if (soundboardTimeline.empty() && ttsTimeline.empty()) {
+    soundboardMutex.unlock();
+    return;
+  }
   if (!soundboardFormatLogged) {
     __android_log_print(ANDROID_LOG_INFO, kTag,
                         "Soundboard recorder format channels=%d rate=%d bytes=%d buffer=%p",
@@ -207,11 +217,10 @@ void mixSoundboardIntoRecording(void* recorder) {
   for (std::size_t outputIndex = 0; outputIndex < sampleCount; ++outputIndex) {
     const std::size_t sourceIndex = static_cast<std::size_t>(soundboardPosition);
     const std::size_t ttsIndex = static_cast<std::size_t>(ttsPosition);
-    std::int64_t mixed = physicalMicMuted ? 0 : static_cast<std::int64_t>(pcm[outputIndex]);
-    if (sourceIndex < soundboardTimeline.size()) mixed += soundboardTimeline[sourceIndex];
-    if (ttsIndex < ttsTimeline.size()) mixed += ttsTimeline[ttsIndex];
-    mixed = std::max<std::int64_t>(INT16_MIN, std::min<std::int64_t>(INT16_MAX, mixed));
-    pcm[outputIndex] = static_cast<std::int16_t>(mixed);
+    pcm[outputIndex] = tencha::mixCallSample(
+        pcm[outputIndex], micMuted,
+        sourceIndex < soundboardTimeline.size() ? soundboardTimeline[sourceIndex] : 0,
+        ttsIndex < ttsTimeline.size() ? ttsTimeline[ttsIndex] : 0);
     if (!soundboardTimeline.empty()) soundboardPosition += step;
     if (!ttsTimeline.empty()) ttsPosition += step;
   }
@@ -250,7 +259,7 @@ bool installSoundboardHook() {
     return false;
   }
   auto* target = reinterpret_cast<void*>(andromedaBase + kRecordCallbackOffset);
-  // Verified against LINE 26.14.0 arm64. Fail closed instead of patching another build.
+  // Verified against LINE 26.14.0 and 26.15.0 arm64. Fail closed on another build.
   const std::uint32_t expected[] = {0xD10183FFU, 0xA9037BFDU, 0xF90023F5U, 0xA9054FF4U};
   if (std::memcmp(target, expected, sizeof(expected)) != 0) {
     __android_log_print(ANDROID_LOG_ERROR, kTag, "Recording callback signature changed");
@@ -351,8 +360,7 @@ Java_dev_vector_lineextension_hooks_NativeCallBridge_nativeClearTts(JNIEnv*, jcl
 extern "C" JNIEXPORT void JNICALL
 Java_dev_vector_lineextension_hooks_NativeCallBridge_nativeSetPhysicalMicMuted(JNIEnv*, jclass,
                                                                                 jboolean muted) {
-  std::lock_guard<std::mutex> guard(soundboardMutex);
-  physicalMicMuted = muted == JNI_TRUE;
+  physicalMicMuted.store(muted == JNI_TRUE, std::memory_order_release);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

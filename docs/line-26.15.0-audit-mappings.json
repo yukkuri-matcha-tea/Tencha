@@ -39,5 +39,8 @@
   {"class":"Lgp8/de;","field":"g","descriptor":"Ljava/lang/String;"},
   {"class":"Lgp8/de;","field":"h","descriptor":"Ljava/lang/String;"},
   {"class":"Lgp8/de;","field":"i","descriptor":"Ljava/lang/String;"},
-  {"class":"Lgp8/de;","field":"b","descriptor":"J"}
+  {"class":"Lgp8/de;","field":"b","descriptor":"J"},
+  {"class":"Lcom/linecorp/andromeda/core/d;","method":"h1","descriptor":"(ZZ)V"},
+  {"class":"Lcom/linecorp/andromeda/jni/SessionJNIImpl;","method":"o","descriptor":"(IJZ)V"},
+  {"class":"Lcom/linecorp/andromeda/jni/SessionJNIImpl;","method":"g0","descriptor":"(J)I"}
 ]

@@ -8,12 +8,12 @@ LINEヤフー株式会社とは無関係です。LINE更新による非互換、
 
 ## ダウンロード
 
-[GitHub Releases](https://github.com/yukkuri-matcha-tea/Tencha/releases/latest)で配布しています。1.9.1の配布物：
+[GitHub Releases](https://github.com/yukkuri-matcha-tea/Tencha/releases/latest)で配布しています。1.9.2の配布物：
 
-- [root向けAPK](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.1/Tencha-root-1.9.1.apk)
-- [非root向けセット](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.1/Tencha-rootless-kit-1.9.1.zip) — モジュール、LSPatch、作成用スクリプト・説明書
-- [非root向けモジュール単体](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.1/Tencha-rootless-module-1.9.1.apk)
-- [SHA-256チェックサム](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.1/Tencha-1.9.1-SHA256SUMS.txt)
+- [root向けAPK](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.2/Tencha-root-1.9.2.apk)
+- [非root向けセット](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.2/Tencha-rootless-kit-1.9.2.zip) — モジュール、LSPatch、作成用スクリプト・説明書
+- [非root向けモジュール単体](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.2/Tencha-rootless-module-1.9.2.apk)
+- [SHA-256チェックサム](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.2/Tencha-1.9.2-SHA256SUMS.txt)
 
 root向け・非root向けモジュールAPKは同じ内容で、導入方法が異なります。パッチ済みLINE APKは配布しません。
 
@@ -75,6 +75,10 @@ LSPatchで利用者自身のLINE APKにTenchaを組み込んで使用します�
 
 サウンドボード音声はLINE内のTencha設定から登録します。通話画面のメニューにある「Tencha 通話調整」から操作し、TTS読み上げをONにしてください。
 
+**ミュート中も追加音声を送信**：LINE内のTencha設定 → チャット → 通話でON/OFFできます。初期OFFです。ONではミュート時にマイク音声だけを0にし、サウンドボード・TTSは送信します。OFFではLINE本来のミュート動作になります。変更後はLINEの再起動が必要です。現在の実装対象はLINE 26.14.0 / 26.15.0です。
+
+注意：自分側でミュート表示でも、相手からはミュートしていないように見える場合があります。追加音声は相手に届くため、ミュート表示を「すべての音声を送信しない」という意味で扱わないでください。相手側の表示は実機未確認です。
+
 自分のメッセージは、DBへ保存され送信確定したテキストを対象にします。画像・スタンプ・送信失敗は除外します。未送信・保留中のメッセージはすぐには読み上げず、確認待ちは最大60秒です。
 
 個別音量調整・マイクレベルメーターの設定項目は削除しています。予約送信も現在の提供機能には含みません。
@@ -97,13 +101,21 @@ LSPatchで利用者自身のLINE APKにTenchaを組み込んで使用します�
 
 TenchaのバックアップはLINE公式のバックアップ・アカウント引き継ぎの代わりにはなりません。
 
-## 1.9.1の修正
+## 1.9.2の変更
+
+- 「ミュート中も追加音声を送信」のON/OFF設定と注意書きを追加
+- マイク音声のゼロ化を追加音声の合成より前に実行。音声キューのロックが混雑してもマイク音声を通さないよう修正
+- LINE 26.15.0で独立ミュート処理を有効化し、ネイティブ処理の準備に失敗した場合は元のミュートを維持
+
+実装・検証の詳細は[独立ミュートの記録](docs/independent-call-mute.md)を参照してください。
+
+### 1.9.1の修正
 
 LINE 26.15.0で「既読履歴を記録」が別の通知処理を監視していた問題を修正しました。正しい既読通知からトーク・既読者・最終既読メッセージ・通知時刻を取得します。受信していない通知や、過去の正確な既読時刻を復元する機能ではありません。詳細は[既読履歴の修正記録](docs/read-history-fix-26.15.0.md)を参照してください。
 
 ## 動作確認と制限
 
-1.9.0の今回の修正では、APK宣言との照合35項目、自動テスト31件、lint・APKビルドが通っています。ただし、これを実機での全機能確認として扱っていません。今回の修正後の画面操作・通話・TTS再生は未検証です。詳細は[修正と検証の記録](docs/line-26.15.0-audit-fixes.md)を参照してください。
+1.9.2の変更では、APK宣言との照合44項目、自動テスト34件、ネイティブ音声合成のコンパイル時検証、lint・APKビルドを確認しています。ただし、これを実機での全機能確認として扱っていません。ミュート中の相手への音声到達・マイク遮断・相手側の表示は実機未確認です。1.9.0の検証記録は[こちら](docs/line-26.15.0-audit-fixes.md)を参照してください。
 
 機能はLINEの版、端末、アカウント、サーバー条件によって動作が変わります。Hook登録の成功だけでは実際の動作を保証できません。不具合報告にはLINE・Tenchaのバージョン、導入方法、再現手順を添えてください。スクリーンショットやログを公開する際は、メッセージ本文・名前・IDなどを伏せてください。
 

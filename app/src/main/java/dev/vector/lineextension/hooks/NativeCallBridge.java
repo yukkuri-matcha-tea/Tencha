@@ -120,14 +120,27 @@ final class NativeCallBridge {
   }
 
   static boolean setPhysicalMicMuted(Context context, boolean muted) {
-    if (!supportsRecordingMixer() || !ensureLoaded(context)) return false;
+    if (!supportsRecordingMixer()) return false;
+    // No native load/patch at VoIP startup or ordinary unmute. If this process has
+    // never used the mixer, there is no independent mic gate to release.
+    if (!muted && !available) return true;
+    if (context == null || !ensureLoaded(context)) return false;
     try {
-      if (!nativeInstallSoundboardMixer()) return false;
+      if (muted && !nativeInstallSoundboardMixer()) return false;
       nativeSetPhysicalMicMuted(muted);
       return true;
     } catch (Throwable error) {
       Log.e("TenchaCall", "Physical microphone state update failed", error);
       return false;
+    }
+  }
+
+  static void resetPhysicalMicMute() {
+    if (!available) return;
+    try {
+      nativeSetPhysicalMicMuted(false);
+    } catch (Throwable error) {
+      Log.e("TenchaCall", "Physical microphone mute reset failed", error);
     }
   }
 

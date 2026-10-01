@@ -17,6 +17,17 @@ public class VectorConfigTest {
   }
 
   @Test
+  public void independentCallMuteIsOptInAndWarnsAboutRemoteDisplay() {
+    VectorConfig config = new VectorConfig();
+    assertFalse(config.independentCallMute.enabled);
+    assertTrue(config.independentCallMute.category == VectorConfig.Category.CHAT);
+    assertTrue(config.independentCallMute.section.equals(config.callTts.section));
+    assertTrue(config.independentCallMute.description.contains("相手からはミュートしていない"));
+    assertTrue(config.independentCallMute.description.contains("再起動"));
+    assertTrue(config.independentCallMute.description.contains("OFFではLINE本来"));
+  }
+
+  @Test
   public void featureKeysAreUniqueAndValidForProvider() {
     VectorConfig config = new VectorConfig();
     Set<String> keys = new HashSet<>();
