@@ -2,96 +2,129 @@
 
 **Enhance your LINE.**
 
-Android版LINE 26.13.0 / 26.13.1の実APKを専用マッピングした、非公式Vector / Xposed拡張モジュールです。未登録の将来版だけは、起動時に構造互換性を別途検査します。
+Android版LINEを拡張する非公式のVector / Xposedモジュールです。機能のON・OFFはLINE内で行い、Tencha本体は接続状態・バージョン・更新情報を確認するために使います。
 
-LINEヤフー株式会社とは無関係です。アカウント制限、データ消失、LINE更新による非互換などの可能性があります。重要なトークやメディアは事前にバックアップし、自己責任で使用してください。
+LINEヤフー株式会社とは無関係です。LINE更新による非互換、アカウント制限、データ消失などの可能性があります。導入前に公式のトークバックアップとログイン手段を確認してください。
 
 ## ダウンロード
 
-root版APKと非root版LSPatchセットは[GitHub Releases](https://github.com/yukkuri-matcha-tea/Tencha/releases)で配布します。パッチ済みLINE APKは配布しません。
+[GitHub Releases](https://github.com/yukkuri-matcha-tea/Tencha/releases/latest)で配布しています。1.9.0の配布物：
+
+- [root向けAPK](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.0/Tencha-root-1.9.0.apk)
+- [非root向けセット](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.0/Tencha-rootless-kit-1.9.0.zip) — モジュール、LSPatch、作成用スクリプト・説明書
+- [非root向けモジュール単体](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.0/Tencha-rootless-module-1.9.0.apk)
+- [SHA-256チェックサム](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.0/Tencha-1.9.0-SHA256SUMS.txt)
+
+root向け・非root向けモジュールAPKは同じ内容で、導入方法が異なります。パッチ済みLINE APKは配布しません。
 
 ## 対応環境
 
-- パッケージ: `jp.naver.line.android`
-- 専用対応LINE: `26.13.0` (`261300096`) / `26.13.1` (`261310101`)
-- LINE設定入口: 最新APKの`i85.b -> g35.e -> g68.f`系に専用対応し、LINEが実際に生成した`k35.s` / `k35.v`をテンプレートとして利用
-- 未登録版: 8個の構造アンカーを検査し、5個以上一致した既知設定だけ自動適用
-- Xposed API: 101以上（target API 102）
-- 想定環境: Root + Zygisk + Vector
-- モジュールパッケージ: `dev.vector.lineextension`
+- Android 8.0以降、arm64-v8a
+- 対象アプリ：LINE（`jp.naver.line.android`）
+- root端末：Vectorなど、Xposed API 101以上に対応した実行環境（target API 102）
+- 非root端末：LSPatch。Shizukuは任意の操作補助で、Hookエンジンではありません
+- Tenchaパッケージ：`dev.vector.lineextension`
 
-別バージョンのLINEでは安全のため通常Hookを適用しません。
+1.9.0ではLINE **26.15.0（261500177）**の実APKを解析し、プロフィール情報、全選択、カメラ、動画、設定入口・メニューなどの参照先を修正しました。
 
-## 使い方
+旧版の対応表も保持しています：26.10.0 / 26.10.1 / 26.11.0 / 26.13.0 / 26.13.1 / 26.14.0。ただし、すべての版で新機能や全機能の動作を保証するものではありません。未登録版では構造互換性を検査しますが、将来のLINE更新への完全対応を保証しません。
 
-### Root端末
+## 導入と設定
 
-1. Releasesから`Tencha-root-1.5.28.apk`をインストールします。
-2. Vectorで「Tencha」を有効化します。
-3. スコープはLINE (`jp.naver.line.android`) だけにします。
-4. モジュールAPKを開き、「機能設定」から必要な機能をONにします。
-5. LINEをタスク一覧から消すだけでなく完全終了し、再起動します。
-6. モジュールAPKの「Vector接続」と「診断・復旧」を確認します。
+### root端末
 
-LINE設定内にも拡張設定への入口を追加します。カスタムフォント、ホーム種別、FCM方式などLINEのRuntime情報が必要な選択はLINE内設定から行います。
+1. root向けAPKをインストールします。
+2. VectorでTenchaを有効化し、スコープをLINEだけに設定します。
+3. LINEを完全終了して再起動します。
+4. Tencha本体で接続状態とLINE・Tenchaのバージョンを確認します。
+5. **LINEの設定 → Tencha → モジュール設定**から必要な機能を設定します。
+
+Tencha本体には機能のON・OFFや診断画面を置いていません。接続状態、バージョン、Tencha・開発者の情報、GitHubからの更新を確認できます。
 
 ### 非root端末
 
-非root版はLSPatchをHook基盤として使い、Shizukuは任意の操作補助として使います。公式LINEとパッチ後LINEは署名が異なるため直接上書きできません。既存LINEを自動削除する機能はありません。詳細は`rootless/README.md`を参照してください。
+LSPatchで利用者自身のLINE APKにTenchaを組み込んで使用します。手順は[非root版セットアップ](rootless/README.md)を参照してください。
 
-## 実装済みの機能群
+公式LINEとパッチ後のLINEは署名が異なるため直接上書きできません。Shizukuでも署名の制約は解除できません。既存LINEの削除が必要になる場合があるので、バックアップとログイン手段の確認を先に行ってください。Tenchaが既存LINEを自動削除することはありません。
 
-- 全体の既読送信回避、手動既読、既読ユーザー・時刻履歴
-- 次に開く1トークだけの既読回避（予約後5分間）
-- トーク単位の常時既読回避（チャット上部の本アイコン長押し）と登録トーク管理
-- 設定・既読履歴・取消履歴・編集履歴をTenchaの非公開内部領域へ保存
-- 任意の端末フォルダ／Google Driveへのバックアップ書き出しと復元
-- GitHub Releasesからの更新確認、APK検証、Android標準インストーラーへの引き渡し
-- LINE内で作成したトーク履歴スナップショットをTencha内部へ保存し、Tenchaバックアップへ同梱
-- LINE内のバックアップ操作から端末フォルダ／Google Driveへ直接書き出し
-- 送信取消イベント保持、取消表示、取消時間制限延長
-- メッセージ時刻の秒表示、既定ブラウザ起動
-- 高品質画像、長時間動画のクライアント制限緩和
-- メンバー指定検索、1文字検索
+## 主な機能
+
+### トーク・プライバシー
+
+- 既読送信回避、手動既読、既読ユーザー・時刻履歴
+- 次に開く1トークだけの既読回避、トーク単位の常時既読回避
+- 送信取消メッセージの保持・取消表示、編集履歴
+- メッセージ時刻の秒表示、全選択、メンバー指定検索・1文字検索
+- メッセージ長押しメニューからGoogle検索・翻訳（表示テキストの置き換え）
+- 既定ブラウザ・標準カメラの利用、高品質画像、長時間動画のクライアント制限緩和
+
+長時間動画はクライアント側の制限を緩和するもので、サーバー側の制限を解除する機能ではありません。
+
+### 他人のプロフィール
+
+- プロフィール画像・背景画像の拡大表示と保存
+- 配置画像の単体表示・保存
+- オブジェクト閲覧モードで、移動・拡大縮小・回転・重なりの確認
+
+自分のプロフィールには追加しません。閲覧モードでの操作は一時的な表示変更で、相手のプロフィールを保存・更新する通信は行いません。閲覧終了時に元の配置へ戻します。
+
+### 通話
+
+- **サウンドボード**：登録した音声ファイルを通話へ流し、自分でも再生音を聞く
+- **TTS**：通話中のテキストメッセージを読み上げる。対象ユーザー、出力先、送信者名の読み上げ、最大文字数を設定可能
+
+サウンドボード音声はLINE内のTencha設定から登録します。通話画面のメニューにある「Tencha 通話調整」から操作し、TTS読み上げをONにしてください。
+
+自分のメッセージは、DBへ保存され送信確定したテキストを対象にします。画像・スタンプ・送信失敗は除外します。未送信・保留中のメッセージはすぐには読み上げず、確認待ちは最大60秒です。
+
+個別音量調整・マイクレベルメーターの設定項目は削除しています。予約送信も現在の提供機能には含みません。
+
+### 表示・通知
+
 - 広告・おすすめ・サービス欄の非表示
-- VOOM/ニュース/MINI等のタブ・ラベル調整
-- AgentIおよびヘッダーボタン非表示
-- TTF/OTF、AMOLED、ダークモード関連
-- 通知表示調整、リアクション通知、実験的FCM Fix
-- Feature単位Safe Mode、次回起動だけ全Hook停止
+- VOOM・ニュース・MINIなどのタブ、ラベル、ヘッダーボタンの調整
+- Agent i関連ボタンの非表示
+- TTF/OTFカスタムフォント、AMOLED・ダークモード関連設定
+- 通知表示調整、リアクション通知
+- 開発者モード内の実験的設定（FCM関連など）
 
-これらはLINE 26.13.0の実APKマッピングに基づく実Hookです。ただし端末・アカウント・サーバー条件で分岐するため、最終的なRuntime動作は端末上で確認してください。5分超動画はクライアント側チェックだけを緩和し、サーバー制限を回避するものではありません。
+### データと更新
 
-## 安全設計
+- 設定・履歴をTenchaの非公開内部領域に保存
+- 必要な人だけ端末フォルダ・Google Driveへバックアップを書き出し、復元
+- LINE内で作成したトーク履歴スナップショットの保存・バックアップ同梱
+- GitHub Releasesからの更新。起動時の自動確認は1日1回で、勝手なインストールや常駐処理は行いません
 
-- 全動作変更機能は初期OFF
-- LINEのメインプロセス以外では通常Hookを適用しない
-- 1機能のHook登録失敗を他機能から分離
-- 同一機能が連続失敗すると、その機能だけSafe Mode
-- LINE更新時は版名だけで全停止せず、既知設定との構造互換性を検証する
-- 構造アンカーが不足する版は全機能を停止し、誤ったHookを適用しない
-- 自動互換時もHook登録失敗は機能単位で隔離する
-- Hook登録だけでは「動作中」と表示しない
-- 診断情報へメッセージ本文や個人情報を保存しない
-- 「次回起動のみ全拡張OFF」で設定を消さず復旧可能
+TenchaのバックアップはLINE公式のバックアップ・アカウント引き継ぎの代わりにはなりません。
+
+## 動作確認と制限
+
+1.9.0の今回の修正では、APK宣言との照合35項目、自動テスト31件、lint・APKビルドが通っています。ただし、これを実機での全機能確認として扱っていません。今回の修正後の画面操作・通話・TTS再生は未検証です。詳細は[修正と検証の記録](docs/line-26.15.0-audit-fixes.md)を参照してください。
+
+機能はLINEの版、端末、アカウント、サーバー条件によって動作が変わります。Hook登録の成功だけでは実際の動作を保証できません。不具合報告にはLINE・Tenchaのバージョン、導入方法、再現手順を添えてください。スクリーンショットやログを公開する際は、メッセージ本文・名前・IDなどを伏せてください。
 
 ## ビルド
 
-Android SDK 37とJDK 17を用意して実行します。
+JDK 21、Android SDK（compileSdk 37）、NDK `29.0.14206865`、CMake `3.22.1`を用意します。CIのSDK導入設定は[release.yml](.github/workflows/release.yml)を参照してください。
 
 ```powershell
+$env:JAVA_HOME = 'C:\path\to\jdk-21'
 $env:ANDROID_HOME = 'C:\Users\name\AppData\Local\Android\Sdk'
-.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
+.\gradlew.bat spotlessCheck testDebugUnitTest lintDebug assembleDebug
 ```
 
-生成先は`app/build/outputs/apk/debug/app-debug.apk`です。
+生成先：`app/build/outputs/apk/debug/app-debug.apk`。ローカルで別の署名鍵を使ったAPKは、配布版を上書きできない場合があります。署名鍵やパスワードはリポジトリに含めないでください。
 
-## Release公開
+## リリース公開
 
-`app/build.gradle`の`versionName`と同じ`v<version>`タグをpushすると、GitHub Actionsがテスト、APKビルド、署名、rootless kit作成、SHA-256生成、GitHub Release公開まで自動実行します。署名鍵はGitHub Actions Secretから復元し、リポジトリには含めません。
+`app/build.gradle`の`versionName`と同じ`v<version>`タグをpushすると、GitHub Actionsがテスト、APKビルド、署名確認、rootlessキット作成、SHA-256生成、Release公開を実行します。署名鍵はGitHub Actions Secretから復元します。READMEなどの通常のブランチ更新だけではリリースしません。
 
-## Tencha固有部分とライセンス
+## 開発者
 
-製品名、管理UI、診断基盤、Safe Mode、26.13.0向け対応表、自動互換リゾルバ、アイコンはTencha固有です。アプリ内に旧プロジェクト名や旧ロゴは表示しません。
+- [GitHub — yukkuri-matcha-tea](https://github.com/yukkuri-matcha-tea)
+- [X — @yukkuri_matcha_](https://x.com/yukkuri_matcha_)
+- [YouTube](https://www.youtube.com/channel/UCuhltKmciQLwQTBEIIiCH2g)
 
-Hook機能の一部はGPL-3.0コードを改変しているため、法的に必要な由来は`VECTOR_NOTICE.md`へ分離して保持しています。配布物全体はGPL-3.0です。
+## ライセンス・由来
+
+Tenchaは独自の製品名・管理UI・設定保存・対応表・アイコンを使用しています。一部のHook実装はGPL-3.0の[2b-zipper/Knot](https://github.com/2b-zipper/Knot)を改変したものです。由来は[VECTOR_NOTICE.md](VECTOR_NOTICE.md)、ライセンスは[LICENSE](LICENSE)を参照してください。配布物全体はGPL-3.0です。
