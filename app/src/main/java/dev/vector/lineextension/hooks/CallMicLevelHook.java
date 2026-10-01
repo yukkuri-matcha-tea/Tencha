@@ -94,6 +94,8 @@ public final class CallMicLevelHook implements BaseHook {
     long appliedStream;
     boolean fallbackVolumeApplied;
     boolean controlsOpen;
+    int soundboardTextColor = Color.WHITE;
+    int soundboardIdleColor = 0xFF333333;
 
     Meter(
         FrameLayout parent,
@@ -230,6 +232,7 @@ public final class CallMicLevelHook implements BaseHook {
               return chain.proceed();
             });
     installCallSettingsMenuItem(lpparam.classLoader);
+    new CallPartySoundboardHook().install(lpparam.classLoader);
   }
 
   private void show(Activity activity) {
@@ -259,6 +262,7 @@ public final class CallMicLevelHook implements BaseHook {
     header.setGravity(Gravity.CENTER_VERTICAL);
     TextView title = new TextView(activity);
     title.setText("Tencha 通話調整");
+    title.setTag("tencha_call_title");
     title.setTextColor(Color.WHITE);
     title.setTextSize(18);
     title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
@@ -279,6 +283,7 @@ public final class CallMicLevelHook implements BaseHook {
     controlScroll.setVerticalScrollBarEnabled(true);
     LinearLayout controls = new LinearLayout(activity);
     controls.setOrientation(LinearLayout.VERTICAL);
+    controls.setTag("tencha_call_sections");
     controls.setPadding(0, dp(activity, 8), 0, dp(activity, 4));
     controlScroll.addView(
         controls,
@@ -357,6 +362,7 @@ public final class CallMicLevelHook implements BaseHook {
     if (Main.options.soundboard.enabled) {
       soundboardStatus = new TextView(activity);
       soundboardStatus.setText("サウンドボード");
+      soundboardStatus.setTag("tencha_soundboard_section");
       soundboardStatus.setTextColor(Color.WHITE);
       soundboardStatus.setTextSize(14);
       LinearLayout.LayoutParams soundTitleParams = new LinearLayout.LayoutParams(-1, -2);
@@ -365,12 +371,14 @@ public final class CallMicLevelHook implements BaseHook {
 
       soundboardList = new LinearLayout(activity);
       soundboardList.setOrientation(LinearLayout.VERTICAL);
+      soundboardList.setTag("tencha_soundboard_section");
       controls.addView(soundboardList, new LinearLayout.LayoutParams(-1, -2));
     }
 
     if (Main.options.callTts.enabled) {
       TextView ttsTitle = new TextView(activity);
       ttsTitle.setText("TTS");
+      ttsTitle.setTag("tencha_tts_section");
       ttsTitle.setTextColor(Color.WHITE);
       ttsTitle.setTextSize(14);
       LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, -2);
@@ -379,6 +387,7 @@ public final class CallMicLevelHook implements BaseHook {
 
       LinearLayout ttsActions = new LinearLayout(activity);
       ttsActions.setOrientation(LinearLayout.HORIZONTAL);
+      ttsActions.setTag("tencha_tts_section");
       TextView ttsToggle = soundboardButton(activity, "TTS読み上げ  OFF");
       TextView ttsSettings = soundboardButton(activity, "設定");
       ttsActions.addView(ttsToggle, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -654,9 +663,10 @@ public final class CallMicLevelHook implements BaseHook {
       if (!(original instanceof String)) button.setTag(name);
       button.setText(active ? "▶  送信中 ×" + activeCount + "・" + name : "▶  " + name);
       GradientDrawable background = new GradientDrawable();
-      background.setColor(active ? 0xFF06C755 : 0xFF333333);
+      background.setColor(active ? 0xFF06C755 : meter.soundboardIdleColor);
       background.setCornerRadius(dp(button.getContext(), 12));
-      if (active) background.setStroke(dp(button.getContext(), 2), 0xFFFFFFFF);
+      button.setTextColor(active ? Color.WHITE : meter.soundboardTextColor);
+      if (active) background.setStroke(dp(button.getContext(), 2), Color.WHITE);
       button.setBackground(background);
     }
   }
@@ -742,6 +752,7 @@ public final class CallMicLevelHook implements BaseHook {
   }
 
   private void installCallSettingsMenuItem(ClassLoader classLoader) {
+    if (!Main.options.callTts.enabled) return;
     try {
       boolean line26150 = "26.15.0".equals(LineVersion.getResolvedVersionName());
       String itemInterfaceName = line26150 ? "vw7.e" : "xp7.e";
@@ -807,10 +818,58 @@ public final class CallMicLevelHook implements BaseHook {
   }
 
   private static void showCallControls() {
+    showCallControls(false);
+  }
+
+  static boolean attachPartySoundboard(LinearLayout content, int textColor) {
+    for (Map.Entry<Activity, Meter> entry : meters.entrySet()) {
+      Activity activity = entry.getKey();
+      Meter meter = entry.getValue();
+      if (activity == null || activity.isFinishing() || !meter.parent.isShown()) continue;
+      if (meter.soundboardStatus == null || meter.soundboardList == null) continue;
+      meter.controlsOpen = false;
+      meter.root.animate().cancel();
+      meter.root.setVisibility(View.GONE);
+      meter.soundboardTextColor = textColor;
+      meter.soundboardIdleColor = (textColor & 0x00FFFFFF) | 0x18000000;
+      content.removeAllViews();
+      for (View section : new View[] {meter.soundboardStatus, meter.soundboardList}) {
+        if (section.getParent() instanceof android.view.ViewGroup)
+          ((android.view.ViewGroup) section.getParent()).removeView(section);
+        section.setVisibility(View.VISIBLE);
+        content.addView(section, new LinearLayout.LayoutParams(-1, -2));
+      }
+      meter.soundboardStatus.setTextColor(textColor);
+      for (int i = 0; i < meter.soundboardList.getChildCount(); i++) {
+        View child = meter.soundboardList.getChildAt(i);
+        if (child instanceof TextView) ((TextView) child).setTextColor(textColor);
+      }
+      updateSoundboardButtons(meter);
+      return true;
+    }
+    return false;
+  }
+
+  private static void showCallControls(boolean soundboard) {
     for (Map.Entry<Activity, Meter> entry : meters.entrySet()) {
       Activity activity = entry.getKey();
       Meter meter = entry.getValue();
       if (activity == null || meter == null || activity.isFinishing()) continue;
+      if (!meter.parent.isShown()) continue;
+      TextView title = meter.root.findViewWithTag("tencha_call_title");
+      if (title != null) title.setText(soundboard ? "サウンドボード" : "Tencha 通話調整");
+      LinearLayout sections = meter.root.findViewWithTag("tencha_call_sections");
+      if (sections != null) {
+        for (int i = 0; i < sections.getChildCount(); i++) {
+          View section = sections.getChildAt(i);
+          if ("tencha_soundboard_section".equals(section.getTag()))
+            section.setVisibility(soundboard ? View.VISIBLE : View.GONE);
+          if ("tencha_tts_section".equals(section.getTag()))
+            section.setVisibility(soundboard ? View.GONE : View.VISIBLE);
+        }
+        if (sections.getParent() instanceof ScrollView)
+          ((ScrollView) sections.getParent()).scrollTo(0, 0);
+      }
       int closeId =
           activity.getResources().getIdentifier("action_x", "id", activity.getPackageName());
       View closeMenu = closeId == 0 ? null : activity.findViewById(closeId);

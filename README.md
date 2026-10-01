@@ -8,12 +8,12 @@ LINEヤフー株式会社とは無関係です。LINE更新による非互換、
 
 ## ダウンロード
 
-[GitHub Releases](https://github.com/yukkuri-matcha-tea/Tencha/releases/latest)で配布しています。1.9.2の配布物：
+[GitHub Releases](https://github.com/yukkuri-matcha-tea/Tencha/releases/latest)で配布しています。1.9.3の配布物：
 
-- [root向けAPK](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.2/Tencha-root-1.9.2.apk)
-- [非root向けセット](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.2/Tencha-rootless-kit-1.9.2.zip) — モジュール、LSPatch、作成用スクリプト・説明書
-- [非root向けモジュール単体](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.2/Tencha-rootless-module-1.9.2.apk)
-- [SHA-256チェックサム](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.2/Tencha-1.9.2-SHA256SUMS.txt)
+- [root向けAPK](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.3/Tencha-root-1.9.3.apk)
+- [非root向けセット](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.3/Tencha-rootless-kit-1.9.3.zip) — モジュール、LSPatch、作成用スクリプト・説明書
+- [非root向けモジュール単体](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.3/Tencha-rootless-module-1.9.3.apk)
+- [SHA-256チェックサム](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.3/Tencha-1.9.3-SHA256SUMS.txt)
 
 root向け・非root向けモジュールAPKは同じ内容で、導入方法が異なります。パッチ済みLINE APKは配布しません。
 
@@ -73,7 +73,9 @@ LSPatchで利用者自身のLINE APKにTenchaを組み込んで使用します�
 - **サウンドボード**：登録した音声ファイルを通話へ流し、自分でも再生音を聞く
 - **TTS**：通話中のテキストメッセージを読み上げる。対象ユーザー、出力先、送信者名の読み上げ、最大文字数を設定可能
 
-サウンドボード音声はLINE内のTencha設定から登録します。通話画面のメニューにある「Tencha 通話調整」から操作し、TTS読み上げをONにしてください。
+サウンドボード音声はLINE内のTencha設定から登録します。再生は通話画面のパーティー機能（YouTube・画面シェアを開く場所）の「サウンドボード」から操作します。TTSは通話画面のメニューにある「Tencha 通話調整」から読み上げをONにしてください。
+
+サウンドボードはパーティー画面の中に表示し、YouTube・画面シェアへその場で切り替えられます。切り替え時は横スライドします。Androidでアニメーションを無効にしている場合は即時切り替えです。このパーティー画面への統合はLINE 26.15.0のAPKに基づく実装で、他の版は未検証です。
 
 **ミュート中も追加音声を送信**：LINE内のTencha設定 → チャット → 通話でON/OFFできます。初期OFFです。ONではミュート時にマイク音声だけを0にし、サウンドボード・TTSは送信します。OFFではLINE本来のミュート動作になります。変更後はLINEの再起動が必要です。現在の実装対象はLINE 26.14.0 / 26.15.0です。
 
@@ -101,7 +103,16 @@ LSPatchで利用者自身のLINE APKにTenchaを組み込んで使用します�
 
 TenchaのバックアップはLINE公式のバックアップ・アカウント引き継ぎの代わりにはなりません。
 
-## 1.9.2の変更
+## 1.9.3の変更
+
+- サウンドボードを「通話調整」からパーティー機能へ移動
+- 独立した下部パネルではなく、パーティー画面内にスクロール可能な操作ページを表示
+- サウンドボードとの往復にも横スライドを追加。連続切り替え・画面破棄・アニメーション無効設定に対応
+- 通話調整はTTS専用にし、サウンドボードの文字色をLINEのテーマに合わせる
+
+ビルド・既存34件のユニットテスト・Android Lint・APKの参照先照合を実施しました。最新版のアニメーションは実機未確認です。詳細は[パーティー画面への統合記録](docs/party-soundboard.md)を参照してください。
+
+### 1.9.2の変更
 
 - 「ミュート中も追加音声を送信」のON/OFF設定と注意書きを追加
 - マイク音声のゼロ化を追加音声の合成より前に実行。音声キューのロックが混雑してもマイク音声を通さないよう修正

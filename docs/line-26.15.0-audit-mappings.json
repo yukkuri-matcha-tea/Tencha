@@ -42,5 +42,8 @@
   {"class":"Lgp8/de;","field":"b","descriptor":"J"},
   {"class":"Lcom/linecorp/andromeda/core/d;","method":"h1","descriptor":"(ZZ)V"},
   {"class":"Lcom/linecorp/andromeda/jni/SessionJNIImpl;","method":"o","descriptor":"(IJZ)V"},
-  {"class":"Lcom/linecorp/andromeda/jni/SessionJNIImpl;","method":"g0","descriptor":"(J)I"}
+  {"class":"Lcom/linecorp/andromeda/jni/SessionJNIImpl;","method":"g0","descriptor":"(J)I"},
+  {"class":"Lcom/linecorp/voip2/feature/watchtogether/view/menu/WtMenuContainerViewHolder;","method":"<init>","descriptor":"(Lso7/a;Landroid/widget/FrameLayout;Landroidx/constraintlayout/widget/Guideline;)V"},
+  {"class":"Lcom/linecorp/voip2/feature/watchtogether/view/menu/WtMenuContainerViewHolder;","field":"f","descriptor":"Lgm7/b5;"},
+  {"class":"Lgm7/b5;","method":"getRoot","descriptor":"()Landroid/view/View;"}
 ]
