@@ -8,12 +8,12 @@ LINEヤフー株式会社とは無関係です。LINE更新による非互換、
 
 ## ダウンロード
 
-[GitHub Releases](https://github.com/yukkuri-matcha-tea/Tencha/releases/latest)で配布しています。1.9.3の配布物：
+[GitHub Releases](https://github.com/yukkuri-matcha-tea/Tencha/releases/latest)で配布しています。1.9.4の配布物：
 
-- [root向けAPK](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.3/Tencha-root-1.9.3.apk)
-- [非root向けセット](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.3/Tencha-rootless-kit-1.9.3.zip) — モジュール、LSPatch、作成用スクリプト・説明書
-- [非root向けモジュール単体](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.3/Tencha-rootless-module-1.9.3.apk)
-- [SHA-256チェックサム](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.3/Tencha-1.9.3-SHA256SUMS.txt)
+- [root向けAPK](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.4/Tencha-root-1.9.4.apk)
+- [非root向けセット](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.4/Tencha-rootless-kit-1.9.4.zip) — モジュール、LSPatch、作成用スクリプト・説明書
+- [非root向けモジュール単体](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.4/Tencha-rootless-module-1.9.4.apk)
+- [SHA-256チェックサム](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v1.9.4/Tencha-1.9.4-SHA256SUMS.txt)
 
 root向け・非root向けモジュールAPKは同じ内容で、導入方法が異なります。パッチ済みLINE APKは配布しません。
 
@@ -103,7 +103,14 @@ LSPatchで利用者自身のLINE APKにTenchaを組み込んで使用します�
 
 TenchaのバックアップはLINE公式のバックアップ・アカウント引き継ぎの代わりにはなりません。
 
-## 1.9.3の変更
+## 1.9.4の修正
+
+- LINE 26.15.0で既読履歴を開くと「ChatId not found」と表示される問題を修正
+- 実APKに基づいて現在のトークID取得先を修正。同じ取得先を使うトーク単位の既読回避・リアクション通知にも反映
+
+既読履歴や設定データは削除していません。35件のユニットテスト、APK参照先50項目の照合、Android Lint、ビルドを確認済みです。修正版のインストールとLINEの再起動は実施していますが、既読履歴画面の実機動作は未確認です。[修正記録](docs/read-history-fix-26.15.0.md)を参照してください。
+
+### 1.9.3の変更
 
 - サウンドボードを「通話調整」からパーティー機能へ移動
 - 独立した下部パネルではなく、パーティー画面内にスクロール可能な操作ページを表示

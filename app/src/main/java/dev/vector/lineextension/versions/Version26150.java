@@ -9,6 +9,11 @@ public final class Version26150 {
   public static LineVersion.Config create() {
     LineVersion.Config v = Version26140.create();
 
+    // ChatHistoryActivity.j holds ChatHistoryRequestViewModel. In the 26.15 DEX,
+    // s() calls r().getChatId(); the inherited t() method no longer exists.
+    v.chat.chatIdField = "j";
+    v.chat.methodGetChatId = "s";
+
     // y13.a obtains the account profile through this service key. cp3.a.toString()
     // labels b as mid and h as name; s70.g/dh3.b were unrelated/removed in 26.15.
     v.profile.g50fClass = "sc0.f";

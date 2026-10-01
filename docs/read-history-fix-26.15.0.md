@@ -1,5 +1,9 @@
 # LINE 26.15.0 read-history notification fix
 
+## Read-history entry: ChatId not found
+
+The header viewer still inherited `ChatHistoryRequestViewModel.t()` from the older mapping. LINE 26.15.0 has no such method. The shipped `ChatHistoryActivity` stores the view model in field `j`; its `s(): String` calls `r(): ChatHistoryRequest`, then `ChatHistoryRequest.getChatId()`. The 26.15.0 mapping now selects `j` / `s` so the history button, persistent per-chat read-block toggle and reaction-notification tracking use the actual current chat. No global or last-seen chat fallback is introduced, and no stored history is deleted. A regression test checks the 26.15 mapping and preservation of the older 26.13 getter. This fixes the entry's ID resolution, not missing past receipts. Device UI verification is pending.
+
 The previous `in8.y1` mapping was incorrect: its constructor subscribes to `NOTIFIED_PREMIUMBACKUP_STATE_CHANGED`. The actual read-receipt handler is `in8.a2`, whose constructor subscribes to `NOTIFIED_READ_MESSAGE`.
 
 Verified in the supplied APK's smali:

@@ -120,6 +120,16 @@ public class LineVersionCompatibilityTest {
   }
 
   @Test
+  public void line26150ChatIdUsesCurrentRequestViewModelGetter() {
+    LineVersion.Config c = LineVersion.resolveVersion("26.15.0", name -> false);
+    assertEquals("j", c.chat.chatIdField);
+    assertEquals("s", c.chat.methodGetChatId);
+    // Do not change older versions' own verified getter when fixing 26.15.
+    LineVersion.Config old = LineVersion.resolveVersion("26.13.0", name -> false);
+    assertEquals("t", old.chat.methodGetChatId);
+  }
+
+  @Test
   public void line26150ReadHistoryUsesReadNotificationNotPremiumBackup() {
     LineVersion.Config c = LineVersion.resolveVersion("26.15.0", name -> false);
     assertEquals("in8.a2", c.unsend.notifiedReadMessageHandlerClass);

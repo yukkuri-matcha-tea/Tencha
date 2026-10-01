@@ -45,5 +45,8 @@
   {"class":"Lcom/linecorp/andromeda/jni/SessionJNIImpl;","method":"g0","descriptor":"(J)I"},
   {"class":"Lcom/linecorp/voip2/feature/watchtogether/view/menu/WtMenuContainerViewHolder;","method":"<init>","descriptor":"(Lso7/a;Landroid/widget/FrameLayout;Landroidx/constraintlayout/widget/Guideline;)V"},
   {"class":"Lcom/linecorp/voip2/feature/watchtogether/view/menu/WtMenuContainerViewHolder;","field":"f","descriptor":"Lgm7/b5;"},
-  {"class":"Lgm7/b5;","method":"getRoot","descriptor":"()Landroid/view/View;"}
+  {"class":"Lgm7/b5;","method":"getRoot","descriptor":"()Landroid/view/View;"},
+  {"class":"Ljp/naver/line/android/activity/chathistory/ChatHistoryActivity;","field":"j","descriptor":"Lcom/linecorp/line/chat/request/ChatHistoryRequestViewModel;"},
+  {"class":"Lcom/linecorp/line/chat/request/ChatHistoryRequestViewModel;","method":"s","descriptor":"()Ljava/lang/String;"},
+  {"class":"Lcom/linecorp/line/chat/request/ChatHistoryRequest;","method":"getChatId","descriptor":"()Ljava/lang/String;"}
 ]
