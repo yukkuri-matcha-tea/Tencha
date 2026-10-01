@@ -243,21 +243,20 @@ public class SettingsButtonLongPress implements BaseHook {
     if (clickableHookInstalled) return;
     synchronized (SettingsButtonLongPress.class) {
       if (clickableHookInstalled) return;
-      clickableHookInstalled = true;
-    }
-
-    final int onClickParam = clickable.getParameterCount() - 1;
-    try {
-      Vector.module
-          .hook(clickable)
-          .intercept(
-              chain -> {
-                if (!isSettingsClickable(chain, onClickParam)) return chain.proceed();
-                Object modifier = buildLongPressModifier(chain);
-                return modifier != null ? modifier : chain.proceed();
-              });
-    } catch (Throwable t) {
-      Vector.log("Tencha: SettingsButtonLongPress could not hook clickable: " + t);
+      final int onClickParam = clickable.getParameterCount() - 1;
+      try {
+        Vector.module
+            .hook(clickable)
+            .intercept(
+                chain -> {
+                  if (!isSettingsClickable(chain, onClickParam)) return chain.proceed();
+                  Object modifier = buildLongPressModifier(chain);
+                  return modifier != null ? modifier : chain.proceed();
+                });
+        clickableHookInstalled = true;
+      } catch (Throwable t) {
+        Vector.log("Tencha: SettingsButtonLongPress could not hook clickable: " + t);
+      }
     }
   }
 

@@ -306,15 +306,20 @@ public class SettingsUIInjector implements BaseHook {
   }
 
   private void bindVectorSettingsRow(View itemView, LineVersion.Config c) {
-    RuntimeReporter.working("line_settings_ui", "LINE設定内の拡張入口をRuntime確認");
-    try {
-      Reflect.callMethod(itemView, c.settings.methodRowSetTitleText, ModuleStrings.SETTINGS_TITLE);
-      Reflect.callMethod(itemView, c.settings.methodRowSetDescription, (CharSequence) null);
-      Reflect.callMethod(itemView, c.settings.methodRowSetArrowVisible, true);
-      Reflect.callMethod(itemView, c.settings.methodRowSetDividerVisible, false);
-      Reflect.callMethod(itemView, "setNewBadgeVisible", false);
-    } catch (Throwable t) {
-      Vector.log("Tencha: Native settings row update fallback: " + t);
+    // 26.15 uses a plain ConstraintLayout, not the older custom settings-row widget.
+    // Its title/arrow/badges are bound by resource IDs below; it has no setter API.
+    if (!"androidx.constraintlayout.widget.ConstraintLayout"
+        .equals(itemView.getClass().getName())) {
+      try {
+        Reflect.callMethod(
+            itemView, c.settings.methodRowSetTitleText, ModuleStrings.SETTINGS_TITLE);
+        Reflect.callMethod(itemView, c.settings.methodRowSetDescription, (CharSequence) null);
+        Reflect.callMethod(itemView, c.settings.methodRowSetArrowVisible, true);
+        Reflect.callMethod(itemView, c.settings.methodRowSetDividerVisible, false);
+        Reflect.callMethod(itemView, "setNewBadgeVisible", false);
+      } catch (Throwable t) {
+        Vector.log("Tencha: Native settings row update fallback: " + t);
+      }
     }
     applyVisibility(itemView, c.res.idIcon, View.VISIBLE);
     applyVisibility(itemView, c.res.idDesc, View.GONE);
@@ -328,7 +333,12 @@ public class SettingsUIInjector implements BaseHook {
     if (iconView != null) applyVectorIcon(itemView, iconView);
 
     TextView title = itemView.findViewById(c.res.idTitle);
-    if (title != null) title.setText(ModuleStrings.SETTINGS_TITLE);
+    if (title != null) {
+      title.setText(ModuleStrings.SETTINGS_TITLE);
+      RuntimeReporter.working("line_settings_ui", "LINE設定内の拡張入口をRuntime確認");
+    } else {
+      RuntimeReporter.partial("line_settings_ui", "Tencha設定行のタイトル表示に失敗");
+    }
     itemView.setOnClickListener(v -> displaySettingsDialog(v.getContext()));
   }
 
@@ -1199,6 +1209,7 @@ public class SettingsUIInjector implements BaseHook {
       }
       injectItemRow(infl, itemParent, ctx, i, currentCfg, toggleType, statusEnum);
       if ("soundboard".equals(i.key)) injectSoundboardManagerRow(infl, itemParent, ctx);
+      if ("call_tts".equals(i.key)) injectCallTtsSettingsRow(infl, itemParent, ctx);
     }
     if (developerItems != null) {
       parent.addView(developerItems);
@@ -1222,6 +1233,19 @@ public class SettingsUIInjector implements BaseHook {
         null,
         view -> openSoundboardManager(ctx));
     tagLastChild(parent, "サウンドボード 音声 追加 削除");
+  }
+
+  private void injectCallTtsSettingsRow(LayoutInflater infl, LinearLayout parent, Context ctx) {
+    injectInfoRow(
+        infl,
+        parent,
+        ctx,
+        "TTS設定",
+        "読み上げ対象・出力先・送信者名・最大文字数",
+        true,
+        null,
+        view -> CallTtsSettings.show(ctx, Collections.emptyList()));
+    tagLastChild(parent, "TTS 読み上げ 対象 出力先 個別");
   }
 
   private void openSoundboardManager(Context ctx) {

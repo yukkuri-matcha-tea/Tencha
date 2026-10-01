@@ -9,6 +9,14 @@ import org.junit.Test;
 
 public class VectorConfigTest {
   @Test
+  public void retiredCallControlsAreNotRegisteredEvenForStoredLegacyKeys() {
+    for (VectorConfig.Item item : new VectorConfig().items) {
+      assertFalse("call_mic_meter".equals(item.key));
+      assertFalse("single_peer_volume".equals(item.key));
+    }
+  }
+
+  @Test
   public void featureKeysAreUniqueAndValidForProvider() {
     VectorConfig config = new VectorConfig();
     Set<String> keys = new HashSet<>();

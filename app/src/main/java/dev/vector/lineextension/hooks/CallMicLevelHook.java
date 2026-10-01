@@ -1,11 +1,13 @@
 package dev.vector.lineextension.hooks;
 
 import android.app.Activity;
+import android.content.Context;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.util.SparseArray;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -15,6 +17,7 @@ import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
+import dev.vector.lineextension.LineVersion;
 import dev.vector.lineextension.LoadParam;
 import dev.vector.lineextension.Main;
 import dev.vector.lineextension.Reflect;
@@ -48,7 +51,27 @@ public final class CallMicLevelHook implements BaseHook {
   private static final Handler UI_HANDLER = new Handler(Looper.getMainLooper());
   private static volatile Method setVolumeMethod;
   private static volatile Object callSettingsMenuItem;
+  private static final ThreadLocal<Boolean> independentMuteCall = new ThreadLocal<>();
   private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
+  private static boolean isLine26150() {
+    return "26.15.0".equals(LineVersion.getResolvedVersionName());
+  }
+
+  private static boolean micMeterEnabled() {
+    return false; // Retired: only soundboard and TTS remain user-facing call controls.
+  }
+
+  private static boolean participantVolumeEnabled() {
+    return false;
+  }
+
+  private static boolean anyCallControlEnabled() {
+    return Main.options.soundboard.enabled
+        || Main.options.callTts.enabled
+        || micMeterEnabled()
+        || participantVolumeEnabled();
+  }
 
   private static final class Meter {
     final FrameLayout parent;
@@ -133,10 +156,8 @@ public final class CallMicLevelHook implements BaseHook {
 
   @Override
   public void hook(VectorConfig config, LoadParam lpparam) {
-    if (!(config.callMicMeter.enabled
-        || config.participantVolume.enabled
-        || config.soundboard.enabled)) return;
-    if (config.participantVolume.enabled) {
+    if (!anyCallControlEnabled()) return;
+    if (participantVolumeEnabled()) {
       setVolumeMethod =
           Reflect.findMethodExact(
               NATIVE_SESSION,
@@ -146,25 +167,35 @@ public final class CallMicLevelHook implements BaseHook {
               int.class,
               float.class);
     }
-    Class<?> audioControl = Reflect.findClass(AUDIO_CONTROL, lpparam.classLoader);
-    Vector.hookAllCtors(
-        audioControl,
-        chain -> {
-          Object result = chain.proceed();
-          audioControlRef = new WeakReference<>(chain.getThisObject());
-          if (Main.options.soundboard.enabled) {
-            NativeCallBridge.prepareSoundboard(Vector.currentApplication());
-          }
-          return result;
-        });
-    Vector.module
-        .hook(Reflect.findMethodExact(audioControl, "G"))
-        .intercept(
-            chain -> {
-              Object result = chain.proceed();
-              audioControlRef = new WeakReference<>(chain.getThisObject());
-              return result;
-            });
+    boolean line26150 = "26.15.0".equals(LineVersion.getResolvedVersionName());
+    if (!line26150) {
+      Class<?> audioControl = Reflect.findClass(AUDIO_CONTROL, lpparam.classLoader);
+      Vector.hookAllCtors(
+          audioControl,
+          chain -> {
+            Object result = chain.proceed();
+            audioControlRef = new WeakReference<>(chain.getThisObject());
+            if (Main.options.soundboard.enabled || Main.options.callTts.enabled) {
+              NativeCallBridge.prepareSoundboard(Vector.currentApplication());
+            }
+            return result;
+          });
+      installIndependentMuteHook(lpparam.classLoader, audioControl);
+      try {
+        Vector.module
+            .hook(Reflect.findMethodExact(audioControl, "G"))
+            .intercept(
+                chain -> {
+                  Object result = chain.proceed();
+                  audioControlRef = new WeakReference<>(chain.getThisObject());
+                  return result;
+                });
+      } catch (Throwable ignored) {
+        Vector.log("TenchaCall: optional AudioControl refresh callback is unavailable");
+      }
+    } else {
+      Vector.log("Tencha: LINE 26.15 audio-engine hooks deferred during call isolation");
+    }
 
     Class<?> callActivity = Reflect.findClass(CALL_ACTIVITY, lpparam.classLoader);
     Vector.module
@@ -180,28 +211,29 @@ public final class CallMicLevelHook implements BaseHook {
         .hook(Reflect.findMethodExact(callActivity, "onPause"))
         .intercept(
             chain -> {
-              hide((Activity) chain.getThisObject());
+              hide((Activity) chain.getThisObject(), false);
               return chain.proceed();
             });
     Vector.module
         .hook(Reflect.findMethodExact(callActivity, "onDestroy"))
         .intercept(
             chain -> {
-              hide((Activity) chain.getThisObject());
+              Activity activity = (Activity) chain.getThisObject();
+              hide(activity, false);
+              if (Main.options.callTts.enabled) CallTtsManager.onCallUiDestroyed(activity);
               return chain.proceed();
             });
     installCallSettingsMenuItem(lpparam.classLoader);
   }
 
   private void show(Activity activity) {
-    if (!(Main.options.callMicMeter.enabled
-            || Main.options.participantVolume.enabled
-            || Main.options.soundboard.enabled)
-        || activity.isFinishing()
-        || meters.containsKey(activity)) {
+    if (!anyCallControlEnabled() || activity.isFinishing() || meters.containsKey(activity)) {
       return;
     }
-    if (Main.options.participantVolume.enabled) NativeCallBridge.ensureLoaded(activity);
+    if (Main.options.callTts.enabled) CallTtsManager.startCall(activity);
+    captureOwnCallName(activity);
+    activity.getWindow().getDecorView().postDelayed(() -> captureOwnCallName(activity), 600L);
+    activity.getWindow().getDecorView().postDelayed(() -> captureOwnCallName(activity), 1600L);
     View content = activity.findViewById(android.R.id.content);
     if (!(content instanceof FrameLayout)) return;
     FrameLayout parent = (FrameLayout) content;
@@ -250,7 +282,7 @@ public final class CallMicLevelHook implements BaseHook {
 
     TextView label = null;
     ProgressBar bar = null;
-    if (Main.options.callMicMeter.enabled) {
+    if (micMeterEnabled()) {
       label = new TextView(activity);
       label.setText("マイク —");
       label.setTextColor(Color.WHITE);
@@ -271,7 +303,7 @@ public final class CallMicLevelHook implements BaseHook {
     LinearLayout participantList = null;
     TextView fallbackVolumeLabel = null;
     SeekBar fallbackVolumeBar = null;
-    if (Main.options.participantVolume.enabled) {
+    if (participantVolumeEnabled()) {
       participantStatus = new TextView(activity);
       participantStatus.setText("参加者を取得中…");
       participantStatus.setTextColor(0xFFBDBDBD);
@@ -330,6 +362,41 @@ public final class CallMicLevelHook implements BaseHook {
       controls.addView(soundboardList, new LinearLayout.LayoutParams(-1, -2));
     }
 
+    if (Main.options.callTts.enabled) {
+      TextView ttsTitle = new TextView(activity);
+      ttsTitle.setText("TTS");
+      ttsTitle.setTextColor(Color.WHITE);
+      ttsTitle.setTextSize(14);
+      LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, -2);
+      titleParams.topMargin = dp(activity, 14);
+      controls.addView(ttsTitle, titleParams);
+
+      LinearLayout ttsActions = new LinearLayout(activity);
+      ttsActions.setOrientation(LinearLayout.HORIZONTAL);
+      TextView ttsToggle = soundboardButton(activity, "TTS読み上げ  OFF");
+      TextView ttsSettings = soundboardButton(activity, "設定");
+      ttsActions.addView(ttsToggle, new LinearLayout.LayoutParams(0, -2, 1f));
+      LinearLayout.LayoutParams settingsParams =
+          new LinearLayout.LayoutParams(dp(activity, 88), -2);
+      settingsParams.leftMargin = dp(activity, 8);
+      ttsActions.addView(ttsSettings, settingsParams);
+      controls.addView(ttsActions, new LinearLayout.LayoutParams(-1, -2));
+      Runnable updateTtsButton =
+          () -> {
+            boolean enabled = CallTtsManager.isSessionEnabled();
+            ttsToggle.setText("TTS読み上げ  " + (enabled ? "ON" : "OFF"));
+            ttsToggle.setTextColor(enabled ? 0xFF9EE493 : Color.WHITE);
+          };
+      ttsToggle.setOnClickListener(
+          view -> {
+            CallTtsManager.setSessionEnabled(activity, !CallTtsManager.isSessionEnabled());
+            updateTtsButton.run();
+          });
+      ttsSettings.setOnClickListener(
+          view -> CallTtsSettings.show(activity, currentTtsPeople(activity)));
+      updateTtsButton.run();
+    }
+
     FrameLayout.LayoutParams params =
         new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
@@ -367,10 +434,8 @@ public final class CallMicLevelHook implements BaseHook {
         new Runnable() {
           @Override
           public void run() {
-            if (!(Main.options.callMicMeter.enabled
-                || Main.options.participantVolume.enabled
-                || Main.options.soundboard.enabled)) {
-              hide(activity);
+            if (!anyCallControlEnabled()) {
+              hide(activity, true);
               return;
             }
             Meter meter = meters.get(activity);
@@ -384,8 +449,8 @@ public final class CallMicLevelHook implements BaseHook {
                 micLabel.setText("マイクレベル " + level);
                 micBar.setProgress(Math.min(100, level));
               }
-              micLabel.setVisibility(Main.options.callMicMeter.enabled ? View.VISIBLE : View.GONE);
-              micBar.setVisibility(Main.options.callMicMeter.enabled ? View.VISIBLE : View.GONE);
+              micLabel.setVisibility(micMeterEnabled() ? View.VISIBLE : View.GONE);
+              micBar.setVisibility(micMeterEnabled() ? View.VISIBLE : View.GONE);
             }
             if (rosterStatus != null && rosterScroll != null && rosterList != null) {
               List<Participant> participants = readGroupParticipants(activity);
@@ -407,8 +472,7 @@ public final class CallMicLevelHook implements BaseHook {
                 resetFallbackVolume(meter);
               } else {
                 clearParticipantRows(meter, true);
-                boolean eligible =
-                    Main.options.participantVolume.enabled && isSingleRemoteCall(activity);
+                boolean eligible = participantVolumeEnabled() && isSingleRemoteCall(activity);
                 rosterStatus.setVisibility(eligible ? View.GONE : View.VISIBLE);
                 rosterStatus.setText("参加者情報を取得できません");
                 rosterScroll.setVisibility(View.GONE);
@@ -421,10 +485,11 @@ public final class CallMicLevelHook implements BaseHook {
               }
             }
             boolean hasVisibleControl =
-                Main.options.callMicMeter.enabled
+                micMeterEnabled()
                     || (rosterScroll != null && rosterScroll.getVisibility() == View.VISIBLE)
                     || (peerBar != null && peerBar.getVisibility() == View.VISIBLE)
-                    || Main.options.soundboard.enabled;
+                    || Main.options.soundboard.enabled
+                    || Main.options.callTts.enabled;
             root.setVisibility(meter.controlsOpen && hasVisibleControl ? View.VISIBLE : View.GONE);
             mainHandler.postDelayed(this, UPDATE_INTERVAL_MS);
           }
@@ -453,7 +518,7 @@ public final class CallMicLevelHook implements BaseHook {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
               if (!fromUser) return;
-              if (!Main.options.participantVolume.enabled || !isSingleRemoteCall(activity)) {
+              if (!participantVolumeEnabled() || !isSingleRemoteCall(activity)) {
                 seekBar.setProgress(100);
                 return;
               }
@@ -475,8 +540,17 @@ public final class CallMicLevelHook implements BaseHook {
     mainHandler.post(update);
   }
 
-  private void hide(Activity activity) {
+  private static void captureOwnCallName(Activity activity) {
+    if (activity == null || activity.isFinishing()) return;
+    CallTtsManager.setSelfDisplayName(dev.vector.lineextension.utils.LineDBUtils.getMyName());
+  }
+
+  private void hide(Activity activity, boolean callEnded) {
     Meter meter = meters.remove(activity);
+    if (callEnded) {
+      CallTtsManager.endCall();
+      if (!isLine26150()) NativeCallBridge.setPhysicalMicMuted(activity, false);
+    }
     if (meter == null) return;
     mainHandler.removeCallbacks(meter.update);
     stopAllSoundboardPlaybacks(meter);
@@ -580,9 +654,65 @@ public final class CallMicLevelHook implements BaseHook {
     }
   }
 
+  private static void installIndependentMuteHook(ClassLoader loader, Class<?> audioControl) {
+    if (!(Main.options.soundboard.enabled || Main.options.callTts.enabled)) return;
+    try {
+      Vector.module
+          .hook(Reflect.findMethodExact(audioControl, "h1", boolean.class, boolean.class))
+          .intercept(
+              chain -> {
+                boolean muted = (Boolean) chain.getArg(0);
+                Context context = Vector.currentApplication();
+                boolean mixerReady = NativeCallBridge.setPhysicalMicMuted(context, muted);
+                independentMuteCall.set(muted && mixerReady);
+                try {
+                  return chain.proceed();
+                } finally {
+                  independentMuteCall.remove();
+                }
+              });
+      Class<?> session = Reflect.findClass(NATIVE_SESSION, loader);
+      Vector.module
+          .hook(Reflect.findMethodExact(session, "o", int.class, long.class, boolean.class))
+          .intercept(
+              chain -> {
+                boolean muted = (Boolean) chain.getArg(2);
+                if (muted && Boolean.TRUE.equals(independentMuteCall.get())) {
+                  // Keep LINE's TX stream alive. The recorder hook replaces only physical mic PCM
+                  // with silence before independently adding TTS and soundboard PCM.
+                  return null;
+                }
+                return chain.proceed();
+              });
+    } catch (Throwable error) {
+      Vector.log("Tencha: independent microphone mute hook unavailable", error);
+    }
+  }
+
+  private static List<CallTtsSettings.Person> currentTtsPeople(Activity activity) {
+    LinkedHashMap<String, CallTtsSettings.Person> people = new LinkedHashMap<>();
+    String self = dev.vector.lineextension.utils.LineDBUtils.getMyMid();
+    if (self != null && !self.isEmpty()) {
+      String selfName = dev.vector.lineextension.utils.LineDBUtils.resolveMemberName(self);
+      people.put(self, new CallTtsSettings.Person(self, selfName == null ? "自分" : selfName));
+    }
+    List<Participant> participants = readGroupParticipants(activity);
+    if (participants != null) {
+      for (Participant participant : participants)
+        people.put(participant.id, new CallTtsSettings.Person(participant.id, participant.name));
+    }
+    for (CallTtsSettings.Person person : CallTtsManager.observedPeople())
+      people.put(person.mid, person);
+    return new ArrayList<>(people.values());
+  }
+
   private void installCallSettingsMenuItem(ClassLoader classLoader) {
     try {
-      Class<?> itemInterface = Reflect.findClass("xp7.e", classLoader);
+      boolean line26150 = "26.15.0".equals(LineVersion.getResolvedVersionName());
+      String itemInterfaceName = line26150 ? "vw7.e" : "xp7.e";
+      String settingsProviderName = line26150 ? "vw7.j" : "xp7.j";
+      String settingsItemsMethod = line26150 ? "v" : "u";
+      Class<?> itemInterface = Reflect.findClass(itemInterfaceName, classLoader);
       Class<?> mutableLiveData = Reflect.findClass("androidx.lifecycle.h1", classLoader);
       // Resolve every value before exposing the proxy to LINE. If LINE changes this API, menu
       // injection fails closed during startup instead of crashing RecyclerView while it binds.
@@ -602,17 +732,17 @@ public final class CallMicLevelHook implements BaseHook {
                 }
                 if ("b".equals(name)) return iconValue;
                 if ("c".equals(name)) return null;
-                if ("d".equals(name)) return titleValue;
-                if ("h".equals(name)) return enabledValue;
+                if ((line26150 ? "g" : "d").equals(name)) return titleValue;
+                if ((line26150 ? "j" : "h").equals(name)) return enabledValue;
                 if ("toString".equals(name)) return "TenchaCallSettingsMenuItem";
                 if ("hashCode".equals(name)) return System.identityHashCode(proxy);
                 if ("equals".equals(name)) return proxy == (args == null ? null : args[0]);
                 return null;
               });
 
-      Class<?> settingsProvider = Reflect.findClass("xp7.j", classLoader);
+      Class<?> settingsProvider = Reflect.findClass(settingsProviderName, classLoader);
       Vector.module
-          .hook(Reflect.findMethodExact(settingsProvider, "u"))
+          .hook(Reflect.findMethodExact(settingsProvider, settingsItemsMethod))
           .intercept(
               chain -> {
                 Object result = chain.proceed();
@@ -631,7 +761,12 @@ public final class CallMicLevelHook implements BaseHook {
       return Reflect.newInstance(liveDataClass, value);
     } catch (Throwable noValueConstructor) {
       Object liveData = Reflect.newInstance(liveDataClass);
-      Reflect.callMethod(liveData, "v", value);
+      try {
+        Reflect.callMethod(liveData, "v", value);
+      } catch (Throwable oldSetterUnavailable) {
+        // AndroidX bundled in LINE 26.15 names MutableLiveData#setValue as x().
+        Reflect.callMethod(liveData, "x", value);
+      }
       return liveData;
     }
   }
@@ -869,7 +1004,7 @@ public final class CallMicLevelHook implements BaseHook {
   }
 
   private static long audioStreamPointer() {
-    Object control = audioControlRef.get();
+    Object control = resolveAudioControl();
     if (control == null) return 0L;
     try {
       Object session = Reflect.callMethod(control, "b1");
@@ -931,13 +1066,49 @@ public final class CallMicLevelHook implements BaseHook {
   }
 
   private static int readRecordingLevel() {
-    Object control = audioControlRef.get();
+    Object control = resolveAudioControl();
     if (control == null) return -1;
     try {
+      if ("26.15.0".equals(LineVersion.getResolvedVersionName())) {
+        Object pcmLevel = Reflect.callMethod(control, "u");
+        return pcmLevel == null ? -1 : Math.max(0, Reflect.getIntField(pcmLevel, "b"));
+      }
       Object level = Reflect.callMethod(control, "G");
       return level instanceof Number ? Math.max(0, ((Number) level).intValue()) : -1;
     } catch (Throwable ignored) {
       return -1;
+    }
+  }
+
+  private static Object resolveAudioControl() {
+    Object cached = audioControlRef.get();
+    if (cached != null) return cached;
+    if (!"26.15.0".equals(LineVersion.getResolvedVersionName())) return null;
+    try {
+      ClassLoader loader = Vector.currentApplication().getClassLoader();
+      Class<?> universeClass =
+          Reflect.findClass("com.linecorp.andromeda.core.UniverseCore", loader);
+      Object universe = Reflect.getStaticObjectField(universeClass, "e");
+      Object holder = getFieldAny(universe, "a");
+      Object values = getFieldAny(holder, "a");
+      if (!(values instanceof SparseArray)) return null;
+      SparseArray<?> calls = (SparseArray<?>) values;
+      Object connecting = null;
+      for (int index = 0; index < calls.size(); index++) {
+        Object control = calls.valueAt(index);
+        if (control == null) continue;
+        String state = String.valueOf(Reflect.callMethod(control, "getState"));
+        if ("CONNECTED".equals(state)) {
+          audioControlRef = new WeakReference<>(control);
+          return control;
+        }
+        if ("CONNECTING".equals(state)) connecting = control;
+      }
+      if (connecting != null) audioControlRef = new WeakReference<>(connecting);
+      return connecting;
+    } catch (Throwable error) {
+      Log.e("TenchaCall", "Safe AudioControl lookup failed", error);
+      return null;
     }
   }
 

@@ -127,6 +127,19 @@ public final class Version26140 {
     v.messageContextMenu.fieldTextParams = "e";
     v.messageContextMenu.fieldText = "a";
 
+    // Plaintext message objects at the post-decryption receive stage and the send stage.
+    // hi8.od thrift fields: from(1), to(2), id(4), text(10), contentType(15).
+    v.callTts.receiveProcessorClass = "jg8.b3";
+    v.callTts.receivePlaintextMethod = "g";
+    v.callTts.sendProcessorClass = "jg8.c4";
+    v.callTts.sendPlaintextMethod = "n";
+    v.callTts.messageClass = "hi8.od";
+    v.callTts.messageFromField = "a";
+    v.callTts.messageToField = "b";
+    v.callTts.messageIdField = "d";
+    v.callTts.messageTextField = "g";
+    v.callTts.messageContentTypeField = "j";
+
     // Chat-tab header state and its button models.
     v.talkTabHeader.chatTabHeaderStateClass = "qz1.f";
     v.talkTabHeader.iconTypeClass = "q11.n";

@@ -140,10 +140,11 @@ public class Main extends XposedModule {
       if (options.showSecondsInChatTime.enabled) {
         applyHook(new ChatTimestampSeconds(), lpparam);
       }
-      if (options.callMicMeter.enabled
-          || options.participantVolume.enabled
-          || options.soundboard.enabled) {
+      if (options.soundboard.enabled || options.callTts.enabled) {
         applyHook(new CallMicLevelHook(), lpparam);
+      }
+      if (options.callTts.enabled) {
+        applyHook(new CallTtsMessageHook(), lpparam);
       }
       if (options.selectAllInEditMode.enabled) {
         applyHook(new ChatEditSelectAllHook(), lpparam);

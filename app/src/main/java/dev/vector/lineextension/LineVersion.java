@@ -67,6 +67,7 @@ public class LineVersion {
     public ChatEditSelectAll chatEditSelectAll = new ChatEditSelectAll();
     public MessageEditHistory messageEditHistory = new MessageEditHistory();
     public MessageContextMenu messageContextMenu = new MessageContextMenu();
+    public CallTts callTts = new CallTts();
     public Camera camera = new Camera();
     public Iab iab = new Iab();
     public HomeTab homeTab = new HomeTab();
@@ -201,6 +202,7 @@ public class LineVersion {
       public String g50aClass = "";
       public String methodGetProfile = "getProfile";
       public String fieldMid = "";
+      public String fieldName = "";
     }
 
     public static class ProfileViewer {
@@ -618,6 +620,20 @@ public class LineVersion {
     }
   }
 
+  public static class CallTts {
+    public String receiveProcessorClass = "";
+    public String receivePlaintextMethod = "";
+    public String sendProcessorClass = "";
+    public String sendPlaintextMethod = "";
+    public String messageClass = "";
+    public String messageFromField = "";
+    public String messageToField = "";
+    public String messageIdField = "";
+    public String messageTextField = "";
+    public String messageContentTypeField = "";
+    public String textContentTypeName = "NONE";
+  }
+
   private static final Map<String, Config> VERSION_TABLE = new HashMap<>();
 
   static {
@@ -627,6 +643,7 @@ public class LineVersion {
     VERSION_TABLE.put("26.13.0", dev.vector.lineextension.versions.Version26130.create());
     VERSION_TABLE.put("26.13.1", dev.vector.lineextension.versions.Version26131.create());
     VERSION_TABLE.put("26.14.0", dev.vector.lineextension.versions.Version26140.create());
+    VERSION_TABLE.put("26.15.0", dev.vector.lineextension.versions.Version26150.create());
   }
 
   private static volatile Config cachedConfig = null;

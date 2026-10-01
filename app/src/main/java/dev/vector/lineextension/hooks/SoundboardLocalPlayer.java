@@ -20,11 +20,16 @@ final class SoundboardLocalPlayer {
   private SoundboardLocalPlayer() {}
 
   static void enqueue(short[] pcm) {
+    enqueue(pcm, false);
+  }
+
+  private static void enqueue(short[] pcm, boolean sequential) {
     synchronized (LOCK) {
       compactIfUseful(pcm.length);
-      ensureCapacity(readIndex + pcm.length);
-      for (int i = 0; i < pcm.length; i++) timeline[readIndex + i] += pcm[i];
-      validEnd = Math.max(validEnd, readIndex + pcm.length);
+      int start = sequential ? validEnd : readIndex;
+      ensureCapacity(start + pcm.length);
+      for (int i = 0; i < pcm.length; i++) timeline[start + i] += pcm[i];
+      validEnd = Math.max(validEnd, start + pcm.length);
       stopRequested = false;
       if (worker == null || !worker.isAlive()) {
         worker = new Thread(SoundboardLocalPlayer::runMixer, "TenchaSoundboardLocal");

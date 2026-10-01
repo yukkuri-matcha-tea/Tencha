@@ -66,6 +66,8 @@ public class PlusMenuHook implements BaseHook {
       return;
     }
     final int composerArg = Reflect.paramIndex(itemEntry, composerCls);
+    final int iconArg = Reflect.paramIndex(itemEntry, int.class);
+    if (iconArg < 0) return;
 
     final Object readToggleCallback =
         generateToggleHandler(
@@ -131,7 +133,7 @@ public class PlusMenuHook implements BaseHook {
               }
               if (targetDrawableId == 0) return result;
 
-              int iconId = (int) chain.getArg(0);
+              int iconId = (int) chain.getArg(iconArg);
               if (iconId != targetDrawableId) return result;
 
               Object composer = chain.getArg(composerArg);

@@ -3,6 +3,7 @@ package dev.vector.lineextension.hooks;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.util.Log;
+import dev.vector.lineextension.LineVersion;
 import dev.vector.lineextension.Vector;
 
 /** Runtime-validated native bridge for LINE's participant-to-SSRC receive mixer. */
@@ -11,6 +12,14 @@ final class NativeCallBridge {
   private static volatile boolean attempted;
 
   private NativeCallBridge() {}
+
+  private static boolean supportsRecordingMixer() {
+    String version = LineVersion.getResolvedVersionName();
+    // 26.15 uses the same validated recording callback signature. Installation is deliberately
+    // lazy: it occurs only after the call is connected and the user presses a soundboard button
+    // or enables remote TTS. Never install it from AudioControl construction.
+    return "26.14.0".equals(version) || "26.15.0".equals(version);
+  }
 
   static synchronized boolean ensureLoaded(Context context) {
     if (available) return true;
@@ -60,7 +69,8 @@ final class NativeCallBridge {
   }
 
   static boolean enqueueSoundboard(Context context, short[] pcm) {
-    if (pcm == null || pcm.length == 0 || !ensureLoaded(context)) return false;
+    if (!supportsRecordingMixer() || pcm == null || pcm.length == 0 || !ensureLoaded(context))
+      return false;
     try {
       return nativeInstallSoundboardMixer() && nativeEnqueueSoundboard(pcm);
     } catch (Throwable error) {
@@ -71,7 +81,7 @@ final class NativeCallBridge {
   }
 
   static boolean prepareSoundboard(Context context) {
-    if (context == null || !ensureLoaded(context)) return false;
+    if (!supportsRecordingMixer() || context == null || !ensureLoaded(context)) return false;
     try {
       return nativeInstallSoundboardMixer();
     } catch (Throwable error) {
@@ -89,6 +99,38 @@ final class NativeCallBridge {
     }
   }
 
+  static boolean enqueueTts(Context context, short[] pcm) {
+    if (!supportsRecordingMixer() || pcm == null || pcm.length == 0 || !ensureLoaded(context))
+      return false;
+    try {
+      return nativeInstallSoundboardMixer() && nativeEnqueueTts(pcm);
+    } catch (Throwable error) {
+      Log.e("TenchaCall", "TTS PCM enqueue failed", error);
+      return false;
+    }
+  }
+
+  static void clearTts() {
+    if (!available) return;
+    try {
+      nativeClearTts();
+    } catch (Throwable error) {
+      Log.e("TenchaCall", "TTS PCM clear failed", error);
+    }
+  }
+
+  static boolean setPhysicalMicMuted(Context context, boolean muted) {
+    if (!supportsRecordingMixer() || !ensureLoaded(context)) return false;
+    try {
+      if (!nativeInstallSoundboardMixer()) return false;
+      nativeSetPhysicalMicMuted(muted);
+      return true;
+    } catch (Throwable error) {
+      Log.e("TenchaCall", "Physical microphone state update failed", error);
+      return false;
+    }
+  }
+
   private static native boolean nativeSetParticipantVolume(
       long audioSessionStream, String participantId, float multiplier);
 
@@ -96,5 +138,11 @@ final class NativeCallBridge {
 
   private static native boolean nativeEnqueueSoundboard(short[] pcm);
 
+  private static native boolean nativeEnqueueTts(short[] pcm);
+
   private static native void nativeClearSoundboard();
+
+  private static native void nativeClearTts();
+
+  private static native void nativeSetPhysicalMicMuted(boolean muted);
 }

@@ -156,6 +156,9 @@ public class ModuleStrings {
   public static final String OPT_PARTICIPANT_VOLUME_DESC = "1対1通話とグループ通話で、参加者ごとの受信音量を0〜200%に調整します。";
   public static final String OPT_SOUNDBOARD_LABEL = "サウンドボード";
   public static final String OPT_SOUNDBOARD_DESC = "登録した音声を通話の送信音声へ混ぜ、相手に自分の発話として流します。";
+  public static final String OPT_CALL_TTS_LABEL = "通話中のメッセージ読み上げ";
+  public static final String OPT_CALL_TTS_DESC =
+      "通常のテキストメッセージをAndroid標準TTSで読み上げます。読み上げ対象と出力先は専用設定で変更できます。";
   public static final String OPT_SELECT_ALL_IN_EDIT_MODE_LABEL = "メッセージ削除画面に全選択ボタンを追加";
   public static final String OPT_SELECT_ALL_IN_EDIT_MODE_DESC =
       "メッセージ削除画面の下部に、すべてのメッセージを選択・選択解除できるボタンを追加します。";

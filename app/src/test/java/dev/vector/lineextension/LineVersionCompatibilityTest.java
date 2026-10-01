@@ -61,8 +61,67 @@ public class LineVersionCompatibilityTest {
   }
 
   @Test
+  public void line26150UsesVerifiedSettingsAndMessageMappings() {
+    LineVersion.Config config = LineVersion.resolveVersion("26.15.0", name -> false);
+    assertNotNull(config);
+    assertEquals("exact", LineVersion.getCompatibilityState());
+    assertEquals("xe8.f", config.settings.settingsAdapterClass);
+    assertEquals("xg5.b", config.settings.settingsSearchHelperClass);
+    assertEquals("zb5.q", config.settings.settingsHeaderItemClass);
+    assertEquals("zb5.u", config.settings.settingsRowItemClass);
+    assertEquals("yb5.a", config.settings.settingsAdapterWrapperClass);
+    assertEquals(0x7f0b229e, config.res.idSettingList);
+    assertEquals("in8.c3", config.callTts.receiveProcessorClass);
+    assertEquals("in8.d4", config.callTts.sendProcessorClass);
+    assertEquals("gp8.od", config.callTts.messageClass);
+    assertEquals("wq1.p", config.unsend.chatMessageViewHolderClass);
+    assertEquals("I0", config.unsend.methodBind);
+    assertEquals(3, config.unsend.methodBindIndex);
+  }
+
+  @Test
+  public void line26150DoesNotInheritRetiredProfileSelectionCameraOrComposeMappings() {
+    LineVersion.Config c = LineVersion.resolveVersion("26.15.0", name -> false);
+    assertEquals("sc0.f", c.profile.g50fClass);
+    assertEquals("zo3.b", c.profile.h13baClass);
+    assertEquals("sd", c.profile.fieldH3);
+    assertEquals("sc0.a", c.profile.g50aClass);
+    assertEquals("b", c.profile.fieldMid);
+    assertEquals("h", c.profile.fieldName);
+    assertEquals("le1.c", c.chatEditSelectAll.selectionProviderClass);
+    assertEquals("le1.d", c.chatEditSelectAll.selectionStateClass);
+    assertEquals("e0", c.chatEditSelectAll.methodGetSelectionState);
+    assertEquals("h0", c.chatEditSelectAll.methodGetItem);
+    assertEquals("d", c.chatEditSelectAll.methodGetSelectedIds);
+    assertEquals("g", c.chatEditSelectAll.methodToggleItem);
+    assertEquals("ie2.g", c.camera.cameraModuleClass);
+    assertEquals("d", c.camera.methodUseExternalCamera);
+    assertEquals("dg1.b", c.media.videoDurationCheckClass);
+    assertEquals("eg1.a$c", c.media.videoDurationSuccessClass);
+    assertEquals("sp1.u", c.media.galleryViewClass);
+    assertEquals("u1.h0", c.compose.clickableClass);
+    assertEquals("z4.y1", c.compose.onGloballyPositionedClass);
+    assertEquals("z4.b0", c.compose.layoutCoordinatesClass);
+    assertEquals("k", c.compose.methodLocalToWindow);
+    assertEquals("lm2.n", c.home26NavIcon.rendererClass);
+    assertEquals(0x7f081298, c.home26NavIcon.settingsDrawableId);
+    assertEquals(0x7f080b9f, c.home26NavIcon.agentDrawableId);
+    assertEquals("y85.i", c.searchBarAgentI.homeSearchBarClass);
+    assertEquals(0x7f0b164c, c.searchBarAgentI.homeAiContainerId);
+    assertEquals(0x7f0b164e, c.searchBarAgentI.homeGuidelineId);
+    assertEquals("com.linecorp.line.commerce.impl.c", c.searchBarAgentI.commerceHeaderClass);
+    assertEquals("d", c.searchBarAgentI.commerceHeaderMethod);
+    assertEquals("ho1.k", c.agentIInChat.toggleComposableClass);
+    assertEquals("c71.t", c.plusMenu.plusMenuComponentClass);
+    assertEquals("j3.r", c.compose.composerClass);
+    assertEquals("j3.b1", c.plusMenu.plusMenuComposerImplClass);
+    assertEquals("aq8.a", c.plusMenu.plusMenuCallbackClass);
+    assertEquals("aq8.l", c.plusMenu.plusMenuOnClickItemClass);
+  }
+
+  @Test
   public void unknownVersionFailsClosedEvenWhenOldAnchorsExist() {
-    assertNull(LineVersion.resolveVersion("26.15.0", name -> true));
+    assertNull(LineVersion.resolveVersion("26.16.0", name -> true));
     assertEquals("unsupported", LineVersion.getCompatibilityState());
     assertEquals("", LineVersion.getResolvedVersionName());
   }
@@ -78,7 +137,7 @@ public class LineVersionCompatibilityTest {
   public void unknownVersionFailsClosedWithoutEnoughAnchors() {
     assertNull(
         LineVersion.resolveVersion(
-            "26.15.0", name -> "jp.naver.line.android.activity.main.MainActivity".equals(name)));
+            "26.16.0", name -> "jp.naver.line.android.activity.main.MainActivity".equals(name)));
     assertEquals("unsupported", LineVersion.getCompatibilityState());
     assertEquals("", LineVersion.getResolvedVersionName());
   }

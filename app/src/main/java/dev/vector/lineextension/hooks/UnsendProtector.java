@@ -104,6 +104,11 @@ public class UnsendProtector implements BaseHook {
             }
             return result;
           });
+      Vector.log(
+          "Tencha: Unsend indicator binding hooked: "
+              + cfg.unsend.chatMessageViewHolderClass
+              + "#"
+              + cfg.unsend.methodBind);
     } catch (Throwable t) {
       Vector.log("Tencha: Bind hook failed: " + t);
     }

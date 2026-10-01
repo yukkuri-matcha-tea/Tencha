@@ -83,6 +83,9 @@ public class AnnouncementNameFix implements BaseHook {
                   if (i > 0) {
                     sb.delete(0, i);
                   }
+                  // Recent LINE versions already resolve the actor in the original formatter.
+                  // Keep its spans and text intact rather than prepending the same name twice.
+                  if (sb.toString().startsWith(name.toString())) return original;
                   sb.insert(0, name.toString());
                   return sb;
                 } catch (Throwable t) {

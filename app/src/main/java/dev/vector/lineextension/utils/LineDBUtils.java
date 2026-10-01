@@ -196,6 +196,19 @@ public class LineDBUtils {
   }
 
   public static String getMyMid() {
+    LineVersion.Config cfg = LineVersion.get();
+    return cfg == null ? null : accountProfileField(cfg.profile.fieldMid, true);
+  }
+
+  /** Account profile, not the first visible participant in a call. */
+  public static String getMyName() {
+    LineVersion.Config cfg = LineVersion.get();
+    String name = cfg == null ? null : accountProfileField(cfg.profile.fieldName, false);
+    return name != null ? name : resolveMemberName(getMyMid());
+  }
+
+  private static String accountProfileField(String field, boolean requireMid) {
+    if (field == null || field.isEmpty()) return null;
     try {
       Context context = Vector.currentApplication();
       if (context == null) return null;
@@ -224,18 +237,20 @@ public class LineDBUtils {
                     .getMethod(cfg.profile.methodGetProfile)
                     .invoke(profileManager);
             if (profile != null) {
-              java.lang.reflect.Field midField =
-                  profile.getClass().getDeclaredField(cfg.profile.fieldMid);
-              midField.setAccessible(true);
-              String mid = (String) midField.get(profile);
-              if (mid != null && mid.startsWith("u")) return mid;
+              java.lang.reflect.Field valueField = profile.getClass().getDeclaredField(field);
+              valueField.setAccessible(true);
+              Object raw = valueField.get(profile);
+              if (raw instanceof String) {
+                String value = ((String) raw).trim();
+                if (!value.isEmpty() && (!requireMid || value.startsWith("u"))) return value;
+              }
             }
           }
         }
       } catch (Throwable ignored) {
       }
     } catch (Throwable t) {
-      Vector.log("Tencha: Error in getMyMid: " + t.getMessage());
+      Vector.log("Tencha: Account profile resolution failed: " + t.getClass().getSimpleName());
     }
     return null;
   }

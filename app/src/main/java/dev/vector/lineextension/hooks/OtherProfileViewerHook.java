@@ -105,9 +105,20 @@ public final class OtherProfileViewerHook implements BaseHook {
 
   private void hookDecorationController() throws Throwable {
     Class<?> controller = Reflect.findClass(cfg.profileViewer.decoControllerClass, classLoader);
-    Constructor<?> ctor = Reflect.findConstructorExact(controller, "tm6.a", "xl6.b", "k.d");
+    Constructor<?> ctor = null;
+    for (Constructor<?> candidate : controller.getDeclaredConstructors()) {
+      if (candidate.getParameterCount() == 3) {
+        ctor = candidate;
+        ctor.setAccessible(true);
+        break;
+      }
+    }
+    if (ctor == null) {
+      throw new NoSuchMethodException(controller.getName() + " three-argument constructor");
+    }
+    final Constructor<?> hookCtor = ctor;
     Vector.module
-        .hook(ctor)
+        .hook(hookCtor)
         .intercept(
             chain -> {
               Object result = chain.proceed();

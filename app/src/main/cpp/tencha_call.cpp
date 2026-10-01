@@ -161,6 +161,9 @@ constexpr int kSoundboardSampleRate = 16000;
 std::mutex soundboardMutex;
 std::vector<std::int64_t> soundboardTimeline;
 double soundboardPosition = 0.0;
+std::vector<std::int64_t> ttsTimeline;
+double ttsPosition = 0.0;
+bool physicalMicMuted = false;
 bool soundboardFormatLogged = false;
 
 using RecordCallback = void (*)(void*, void*);
@@ -178,7 +181,7 @@ int findAndromedaBase(struct dl_phdr_info* info, size_t, void* data) {
 
 void mixSoundboardIntoRecording(void* recorder) {
   if (recorder == nullptr || !soundboardMutex.try_lock()) return;
-  if (soundboardTimeline.empty()) {
+  if (soundboardTimeline.empty() && ttsTimeline.empty() && !physicalMicMuted) {
     soundboardMutex.unlock();
     return;
   }
@@ -203,12 +206,18 @@ void mixSoundboardIntoRecording(void* recorder) {
   const double step = static_cast<double>(kSoundboardSampleRate) / sampleRate;
   for (std::size_t outputIndex = 0; outputIndex < sampleCount; ++outputIndex) {
     const std::size_t sourceIndex = static_cast<std::size_t>(soundboardPosition);
-    if (sourceIndex >= soundboardTimeline.size()) break;
-    std::int64_t mixed = static_cast<std::int64_t>(pcm[outputIndex]) +
-                         soundboardTimeline[sourceIndex];
+    const std::size_t ttsIndex = static_cast<std::size_t>(ttsPosition);
+    std::int64_t mixed = physicalMicMuted ? 0 : static_cast<std::int64_t>(pcm[outputIndex]);
+    if (sourceIndex < soundboardTimeline.size()) mixed += soundboardTimeline[sourceIndex];
+    if (ttsIndex < ttsTimeline.size()) mixed += ttsTimeline[ttsIndex];
     mixed = std::max<std::int64_t>(INT16_MIN, std::min<std::int64_t>(INT16_MAX, mixed));
     pcm[outputIndex] = static_cast<std::int16_t>(mixed);
-    soundboardPosition += step;
+    if (!soundboardTimeline.empty()) soundboardPosition += step;
+    if (!ttsTimeline.empty()) ttsPosition += step;
+  }
+  if (ttsPosition >= static_cast<double>(ttsTimeline.size())) {
+    ttsTimeline.clear();
+    ttsPosition = 0.0;
   }
   if (soundboardPosition >= static_cast<double>(soundboardTimeline.size())) {
     soundboardTimeline.clear();
@@ -308,11 +317,42 @@ Java_dev_vector_lineextension_hooks_NativeCallBridge_nativeEnqueueSoundboard(JNI
   return JNI_TRUE;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_vector_lineextension_hooks_NativeCallBridge_nativeEnqueueTts(JNIEnv* env, jclass,
+                                                                       jshortArray pcm) {
+  if (pcm == nullptr) return JNI_FALSE;
+  const jsize length = env->GetArrayLength(pcm);
+  if (length <= 0) return JNI_FALSE;
+  std::vector<std::int16_t> samples(static_cast<std::size_t>(length));
+  env->GetShortArrayRegion(pcm, 0, length, reinterpret_cast<jshort*>(samples.data()));
+  if (env->ExceptionCheck()) return JNI_FALSE;
+  std::lock_guard<std::mutex> guard(soundboardMutex);
+  const std::size_t start = std::max(static_cast<std::size_t>(std::ceil(ttsPosition)),
+                                     ttsTimeline.size());
+  if (ttsTimeline.size() < start + samples.size()) ttsTimeline.resize(start + samples.size(), 0);
+  for (std::size_t i = 0; i < samples.size(); ++i) ttsTimeline[start + i] += samples[i];
+  return JNI_TRUE;
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_dev_vector_lineextension_hooks_NativeCallBridge_nativeClearSoundboard(JNIEnv*, jclass) {
   std::lock_guard<std::mutex> guard(soundboardMutex);
   soundboardTimeline.clear();
   soundboardPosition = 0.0;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_vector_lineextension_hooks_NativeCallBridge_nativeClearTts(JNIEnv*, jclass) {
+  std::lock_guard<std::mutex> guard(soundboardMutex);
+  ttsTimeline.clear();
+  ttsPosition = 0.0;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_vector_lineextension_hooks_NativeCallBridge_nativeSetPhysicalMicMuted(JNIEnv*, jclass,
+                                                                                jboolean muted) {
+  std::lock_guard<std::mutex> guard(soundboardMutex);
+  physicalMicMuted = muted == JNI_TRUE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

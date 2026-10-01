@@ -69,7 +69,7 @@ final class SoundboardStore {
     String id = UUID.randomUUID().toString();
     File output = new File(directory, id + ".wav");
     try {
-      decodeToWav(context, uri, output);
+      writeWav(output, decodeToPcm16(context, uri), TARGET_RATE);
       Clip clip = new Clip(id, displayName(context, uri), output.getAbsolutePath());
       List<Clip> clips = load(context);
       clips.add(clip);
@@ -153,7 +153,7 @@ final class SoundboardStore {
     return "サウンド " + System.currentTimeMillis();
   }
 
-  private static void decodeToWav(Context context, Uri uri, File output) throws Exception {
+  static short[] decodeToPcm16(Context context, Uri uri) throws Exception {
     MediaExtractor extractor = new MediaExtractor();
     MediaCodec codec = null;
     ByteArrayOutputStream pcm = new ByteArrayOutputStream();
@@ -234,8 +234,7 @@ final class SoundboardStore {
     if (sampleRate <= 0 || channelCount <= 0 || pcm.size() == 0)
       throw new IllegalArgumentException("音声を変換できません");
     short[] mono = toMono16(pcm.toByteArray(), channelCount, pcmEncoding);
-    short[] normalized = resample(mono, sampleRate, TARGET_RATE);
-    writeWav(output, normalized, TARGET_RATE);
+    return resample(mono, sampleRate, TARGET_RATE);
   }
 
   private static short[] toMono16(byte[] source, int channels, int encoding) {
