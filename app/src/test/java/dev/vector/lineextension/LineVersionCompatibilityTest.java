@@ -144,6 +144,25 @@ public class LineVersionCompatibilityTest {
   }
 
   @Test
+  public void line26151UsesVerifiedComposeAndGalleryMappings() {
+    LineVersion.Config c = LineVersion.resolveVersion("26.15.1", name -> false);
+    assertNotNull(c);
+    assertEquals("exact", LineVersion.getCompatibilityState());
+    assertEquals("26.15.1", LineVersion.getResolvedVersionName());
+    assertEquals("j3.q", c.compose.composerClass);
+    assertEquals("j3.c1", c.plusMenu.plusMenuComposerImplClass);
+    assertEquals("z4.w1", c.compose.onGloballyPositionedClass);
+    assertEquals("z4.a0", c.compose.layoutCoordinatesClass);
+    assertEquals("sp1.x", c.media.galleryViewClass);
+    assertEquals("s", c.chat.methodGetChatId);
+    assertEquals("xe8.f", c.settings.settingsAdapterClass);
+    assertEquals("in8.a2", c.unsend.notifiedReadMessageHandlerClass);
+    LineVersion.Config old = LineVersion.resolveVersion("26.15.0", name -> false);
+    assertEquals("j3.r", old.compose.composerClass);
+    assertEquals("sp1.u", old.media.galleryViewClass);
+  }
+
+  @Test
   public void unknownVersionFailsClosedEvenWhenOldAnchorsExist() {
     assertNull(LineVersion.resolveVersion("26.16.0", name -> true));
     assertEquals("unsupported", LineVersion.getCompatibilityState());

@@ -56,7 +56,7 @@ public final class CallMicLevelHook implements BaseHook {
   private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
   private static boolean isLine26150() {
-    return "26.15.0".equals(LineVersion.getResolvedVersionName());
+    return NativeCallBridge.uses2615CallApi();
   }
 
   private static boolean micMeterEnabled() {
@@ -170,7 +170,7 @@ public final class CallMicLevelHook implements BaseHook {
               int.class,
               float.class);
     }
-    boolean line26150 = "26.15.0".equals(LineVersion.getResolvedVersionName());
+    boolean line26150 = isLine26150();
     if (!line26150) {
       Class<?> audioControl = Reflect.findClass(AUDIO_CONTROL, lpparam.classLoader);
       Vector.hookAllCtors(
@@ -240,6 +240,8 @@ public final class CallMicLevelHook implements BaseHook {
       return;
     }
     if (Main.options.callTts.enabled) CallTtsManager.startCall(activity);
+    captureCallChat(activity);
+    activity.getWindow().getDecorView().postDelayed(() -> captureCallChat(activity), 600L);
     captureOwnCallName(activity);
     activity.getWindow().getDecorView().postDelayed(() -> captureOwnCallName(activity), 600L);
     activity.getWindow().getDecorView().postDelayed(() -> captureOwnCallName(activity), 1600L);
@@ -754,7 +756,7 @@ public final class CallMicLevelHook implements BaseHook {
   private void installCallSettingsMenuItem(ClassLoader classLoader) {
     if (!Main.options.callTts.enabled) return;
     try {
-      boolean line26150 = "26.15.0".equals(LineVersion.getResolvedVersionName());
+      boolean line26150 = isLine26150();
       String itemInterfaceName = line26150 ? "vw7.e" : "xp7.e";
       String settingsProviderName = line26150 ? "vw7.j" : "xp7.j";
       String settingsItemsMethod = line26150 ? "v" : "u";
@@ -925,6 +927,25 @@ public final class CallMicLevelHook implements BaseHook {
     // LINE 26.14.0 bundles a minified AndroidX build. FragmentManager#getFragments no longer
     // exists by that name; LINE itself resolves the active call Fragment through r0.I(int).
     return Reflect.callMethod(manager, "I", mainContentId);
+  }
+
+  private static void captureCallChat(Activity activity) {
+    if (!Main.options.callTts.enabled || !NativeCallBridge.uses2615CallApi()) return;
+    try {
+      Object fragment = findPrimaryCallFragment(activity);
+      if (fragment == null) return;
+      if (isClassOrSuperclass(fragment, GROUP_FRAGMENT)) {
+        Object session = Reflect.getObjectField(fragment, "d");
+        Object model = Reflect.getObjectField(session, "l");
+        Object connect = Reflect.getObjectField(model, "j");
+        CallTtsManager.setCallGroupChatId((String) Reflect.callMethod(connect, "q"));
+      } else if (isClassOrSuperclass(fragment, FREE_FRAGMENT)
+          || isClassOrSuperclass(fragment, OA_FRAGMENT)) {
+        CallTtsManager.setCallGroupChatId(null);
+      }
+    } catch (Throwable error) {
+      Vector.log("Tencha: TTS active group lookup pending");
+    }
   }
 
   private static List<Participant> readGroupParticipantsFromFragment(Object fragment) {
@@ -1163,7 +1184,7 @@ public final class CallMicLevelHook implements BaseHook {
     Object control = resolveAudioControl();
     if (control == null) return -1;
     try {
-      if ("26.15.0".equals(LineVersion.getResolvedVersionName())) {
+      if (isLine26150()) {
         Object pcmLevel = Reflect.callMethod(control, "u");
         return pcmLevel == null ? -1 : Math.max(0, Reflect.getIntField(pcmLevel, "b"));
       }
@@ -1177,7 +1198,7 @@ public final class CallMicLevelHook implements BaseHook {
   private static Object resolveAudioControl() {
     Object cached = audioControlRef.get();
     if (cached != null) return cached;
-    if (!"26.15.0".equals(LineVersion.getResolvedVersionName())) return null;
+    if (!isLine26150()) return null;
     try {
       ClassLoader loader = Vector.currentApplication().getClassLoader();
       Class<?> universeClass =

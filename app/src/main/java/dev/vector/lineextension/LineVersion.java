@@ -644,6 +644,7 @@ public class LineVersion {
     VERSION_TABLE.put("26.13.1", dev.vector.lineextension.versions.Version26131.create());
     VERSION_TABLE.put("26.14.0", dev.vector.lineextension.versions.Version26140.create());
     VERSION_TABLE.put("26.15.0", dev.vector.lineextension.versions.Version26150.create());
+    VERSION_TABLE.put("26.15.1", dev.vector.lineextension.versions.Version26151.create());
   }
 
   private static volatile Config cachedConfig = null;

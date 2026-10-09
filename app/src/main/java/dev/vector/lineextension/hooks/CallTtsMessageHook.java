@@ -34,6 +34,7 @@ public final class CallTtsMessageHook implements BaseHook {
   public void hook(VectorConfig config, LoadParam lpparam) {
     if (!config.callTts.enabled) return;
     LineVersion.CallTts mapping = LineVersion.get().callTts;
+    hookGroupCallContext(lpparam.classLoader);
     hookSelfMessageInsert();
     hookMessageMethod(
         lpparam.classLoader,
@@ -41,6 +42,30 @@ public final class CallTtsMessageHook implements BaseHook {
         mapping.receivePlaintextMethod,
         mapping.messageClass,
         false);
+  }
+
+  private static void hookGroupCallContext(ClassLoader loader) {
+    if (!NativeCallBridge.uses2615CallApi()) return;
+    try {
+      // 26.15.1 ew7.i is the live group-call session; kw7.a.j is its connect info.
+      // ConnectInfoImpl.q() returns group ID. kw7.a.k/A0 is the display name, not the ID.
+      Vector.hookAllCtors(
+          Reflect.findClass("ew7.i", loader),
+          chain -> {
+            Object result = chain.proceed();
+            try {
+              Object model = Reflect.getObjectField(chain.getThisObject(), "l");
+              Object connect = Reflect.getObjectField(model, "j");
+              CallTtsManager.setCallGroupChatId((String) Reflect.callMethod(connect, "q"));
+            } catch (Throwable error) {
+              CallTtsManager.setCallGroupChatId(null);
+              Vector.log("Tencha: TTS call group unavailable", error);
+            }
+            return result;
+          });
+    } catch (Throwable error) {
+      Vector.log("Tencha: TTS group context hook unavailable", error);
+    }
   }
 
   /**
@@ -121,7 +146,7 @@ public final class CallTtsMessageHook implements BaseHook {
               SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READONLY);
           Cursor row =
               db.rawQuery(
-                  "SELECT server_id, from_mid, content, type, attachement_type, status FROM chat_history WHERE id = ?",
+                  "SELECT server_id, from_mid, content, type, attachement_type, status, chat_id FROM chat_history WHERE id = ?",
                   new String[] {String.valueOf(rowId)})) {
         if (!row.moveToFirst()) {
           retry = true; // Outer transaction may not have committed yet.
@@ -138,7 +163,12 @@ public final class CallTtsMessageHook implements BaseHook {
               && !row.isNull(0)
               && !row.getString(0).isEmpty()) {
             CallTtsManager.onCommittedSelfText(
-                token, row.getString(0), mid, LineDBUtils.getMyName(), row.getString(2));
+                token,
+                row.getString(0),
+                mid,
+                LineDBUtils.getMyName(),
+                row.getString(2),
+                row.getString(6));
           } else {
             retry = true;
           }
@@ -208,7 +238,9 @@ public final class CallTtsMessageHook implements BaseHook {
       if (fromSelf && (senderMid == null || senderMid.isEmpty())) senderMid = myMid;
       String senderName = LineDBUtils.resolveMemberName(senderMid);
       Log.i("TenchaCall", "TTS text observed: direction=" + (outgoing ? "outgoing" : "incoming"));
-      CallTtsManager.onTextMessage(id, senderMid, senderName, text, fromSelf);
+      String toMid = (String) Reflect.getObjectField(message, mapping.messageToField);
+      String chatId = myMid != null && myMid.equals(toMid) ? senderMid : toMid;
+      CallTtsManager.onTextMessage(id, senderMid, senderName, text, fromSelf, chatId);
     } catch (Throwable error) {
       Vector.log("Tencha: TTS message parse failed: " + error.getClass().getSimpleName());
     }

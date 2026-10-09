@@ -59,9 +59,12 @@ public class SettingsUIInjector implements BaseHook {
   private static final int PICK_RESTORE_DB_CODE = 0x4C5A;
   private static final int EXPORT_CHAT_BACKUP_CODE = 0x4C5B;
   private static final int PICK_SOUNDBOARD_CODE = 0x4C5C;
+  private static final int PICK_CALL_RINGTONE_CODE = 0x4C5D;
+  private static final int PICK_CALL_RINGBACK_CODE = 0x4C5E;
   private static final VectorConfig.Category[] DISPLAY_CATEGORIES = {
     VectorConfig.Category.PRIVACY,
     VectorConfig.Category.CHAT,
+    VectorConfig.Category.CALL,
     VectorConfig.Category.DISPLAY,
     VectorConfig.Category.NOTIFICATION,
     VectorConfig.Category.DEVELOPER
@@ -387,6 +390,13 @@ public class SettingsUIInjector implements BaseHook {
     } else if (requestCode == PICK_SOUNDBOARD_CODE) {
       handleSoundboardPicked(chain);
       return null;
+    } else if (requestCode == PICK_CALL_RINGTONE_CODE || requestCode == PICK_CALL_RINGBACK_CODE) {
+      handleCallTonePicked(
+          chain,
+          requestCode == PICK_CALL_RINGTONE_CODE
+              ? CallToneStore.Kind.RINGTONE
+              : CallToneStore.Kind.RINGBACK);
+      return null;
     }
     return chain.proceed();
   }
@@ -465,6 +475,53 @@ public class SettingsUIInjector implements BaseHook {
               }
             },
             "TenchaSoundboardImport")
+        .start();
+  }
+
+  private void handleCallTonePicked(XposedInterface.Chain chain, CallToneStore.Kind kind) {
+    if ((int) chain.getArg(1) != Activity.RESULT_OK || chain.getArg(2) == null) return;
+    Uri source = ((Intent) chain.getArg(2)).getData();
+    if (source == null) return;
+    Activity host = (Activity) chain.getThisObject();
+    Context app = host.getApplicationContext();
+    Toast.makeText(host, "音声を取り込んでいます…", Toast.LENGTH_SHORT).show();
+    new Thread(
+            () -> {
+              try {
+                String name = CallToneStore.importAudio(app, source, kind);
+                host.runOnUiThread(
+                    () -> {
+                      if (host.isFinishing() || host.isDestroyed()) return;
+                      Toast.makeText(
+                              host,
+                              name
+                                  + " を"
+                                  + kind.label
+                                  + "に設定しました。"
+                                  + ((kind == CallToneStore.Kind.RINGTONE
+                                              ? Main.options.customCallRingtone
+                                              : Main.options.customCallRingback)
+                                          .enabled
+                                      ? ""
+                                      : "「" + kind.label + "を変更」をONにしてください。"),
+                              Toast.LENGTH_LONG)
+                          .show();
+                      if (onSettingsReloadRequest != null) onSettingsReloadRequest.run();
+                    });
+              } catch (Throwable error) {
+                Vector.log("Tencha: ringtone import failed", error);
+                host.runOnUiThread(
+                    () -> {
+                      if (!host.isFinishing() && !host.isDestroyed())
+                        Toast.makeText(
+                                host,
+                                kind.label + "を取り込めません: " + error.getMessage(),
+                                Toast.LENGTH_LONG)
+                            .show();
+                    });
+              }
+            },
+            "TenchaCallToneImport")
         .start();
   }
 
@@ -923,6 +980,24 @@ public class SettingsUIInjector implements BaseHook {
       Object toggleType,
       Object statusEnum) {
     try {
+      if (i.key.equals("call_ringtone_file") || i.key.equals("call_ringback_file")) {
+        CallToneStore.Kind kind =
+            i.key.equals("call_ringtone_file")
+                ? CallToneStore.Kind.RINGTONE
+                : CallToneStore.Kind.RINGBACK;
+        View row =
+            injectInfoRow(
+                infl,
+                parent,
+                ctx,
+                i.label,
+                CallToneStore.selectedName(ctx, kind),
+                true,
+                null,
+                view -> openCallTonePicker(ctx, kind));
+        if (row != null) row.setTag(kind.label + " ファイル 音声 選択");
+        return;
+      }
       if (i.key.equals("custom_font_path")) {
         injectFontPickerRow(infl, parent, ctx, i);
         return;
@@ -1292,6 +1367,22 @@ public class SettingsUIInjector implements BaseHook {
     intent.setType("audio/*");
     intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
     host.startActivityForResult(intent, PICK_SOUNDBOARD_CODE);
+  }
+
+  private void openCallTonePicker(Context ctx, CallToneStore.Kind kind) {
+    Activity host = resolveActivity(ctx);
+    if (host == null) return;
+    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+    intent.addCategory(Intent.CATEGORY_OPENABLE);
+    intent.setType("audio/*");
+    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+    try {
+      host.startActivityForResult(
+          intent,
+          kind == CallToneStore.Kind.RINGTONE ? PICK_CALL_RINGTONE_CODE : PICK_CALL_RINGBACK_CODE);
+    } catch (android.content.ActivityNotFoundException error) {
+      Toast.makeText(ctx, "音声ファイルを選択するアプリが見つかりません", Toast.LENGTH_LONG).show();
+    }
   }
 
   private void injectSectionHeader(LayoutInflater infl, LinearLayout parent, String text) {

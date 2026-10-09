@@ -18,7 +18,16 @@ final class NativeCallBridge {
     // 26.15 uses the same validated recording callback signature. Installation is deliberately
     // lazy: it occurs only after the call is connected and the user presses a soundboard button
     // or enables remote TTS. Never install it from AudioControl construction.
-    return "26.14.0".equals(version) || "26.15.0".equals(version);
+    return "26.14.0".equals(version) || uses2615CallApi();
+  }
+
+  static boolean uses2615CallApi() {
+    return uses2615CallApi(LineVersion.getResolvedVersionName());
+  }
+
+  static boolean uses2615CallApi(String version) {
+    // 26.15.1 libandromeda.so is SHA-256 identical to the verified 26.15.0 binary.
+    return "26.15.0".equals(version) || "26.15.1".equals(version);
   }
 
   static synchronized boolean ensureLoaded(Context context) {

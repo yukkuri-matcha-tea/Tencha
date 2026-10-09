@@ -99,6 +99,7 @@ public class Main extends XposedModule {
       applyHook(new SafeResourceFix(), lpparam);
       applyHook(new AnnouncementNameFix(), lpparam);
       applyHook(new MainSurfaceFix(), lpparam);
+      applyHook(new CallToneHook(), lpparam);
 
       if (options.recordReadHistory.enabled
           || options.preventMarkAsRead.enabled

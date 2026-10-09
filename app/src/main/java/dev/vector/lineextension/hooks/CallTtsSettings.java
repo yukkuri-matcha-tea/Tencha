@@ -22,6 +22,7 @@ final class CallTtsSettings {
   static final String KEY_SELECTED_MIDS = "call_tts_selected_mids";
 
   static final String TARGET_ALL = "all";
+  static final String TARGET_CALL_CHAT = "call_chat";
   static final String TARGET_SELF = "self";
   static final String TARGET_OTHERS = "others";
   static final String TARGET_SELECTED = "selected";
@@ -42,7 +43,7 @@ final class CallTtsSettings {
   private CallTtsSettings() {}
 
   static String target() {
-    return SettingsStore.getString(KEY_TARGET, TARGET_ALL);
+    return SettingsStore.getString(KEY_TARGET, TARGET_CALL_CHAT);
   }
 
   static String output() {
@@ -99,8 +100,8 @@ final class CallTtsSettings {
   }
 
   private static void showTargetPicker(Context context, List<Person> people) {
-    String[] labels = {"全員", "自分のみ", "自分以外", "個別に選択"};
-    String[] values = {TARGET_ALL, TARGET_SELF, TARGET_OTHERS, TARGET_SELECTED};
+    String[] labels = {"通話中のグループのチャットのみ", "全チャット", "自分のみ", "自分以外", "個別に選択"};
+    String[] values = {TARGET_CALL_CHAT, TARGET_ALL, TARGET_SELF, TARGET_OTHERS, TARGET_SELECTED};
     int checked = Math.max(0, Arrays.asList(values).indexOf(target()));
     AlertDialog dialog =
         new AlertDialog.Builder(context, LineTheme.dialogTheme(context))
@@ -213,10 +214,11 @@ final class CallTtsSettings {
   }
 
   private static String targetLabel(String value) {
+    if (TARGET_CALL_CHAT.equals(value)) return "通話中のグループのチャットのみ";
     if (TARGET_SELF.equals(value)) return "自分のみ";
     if (TARGET_OTHERS.equals(value)) return "自分以外";
     if (TARGET_SELECTED.equals(value)) return "個別に選択";
-    return "全員";
+    return "全チャット";
   }
 
   private static String outputLabel(String value) {

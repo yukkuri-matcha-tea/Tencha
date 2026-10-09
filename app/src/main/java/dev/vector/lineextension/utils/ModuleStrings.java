@@ -14,6 +14,7 @@ public class ModuleStrings {
 
   public static final String CAT_PRIVACY = "プライバシー";
   public static final String CAT_CHAT = "チャット";
+  public static final String CAT_CALL = "通話";
   public static final String CAT_DISPLAY = "画面表示";
   public static final String CAT_NOTIFICATION = "通知";
   public static final String CAT_STORAGE = "保存先";

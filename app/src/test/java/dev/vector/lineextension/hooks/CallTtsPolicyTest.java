@@ -69,4 +69,22 @@ public final class CallTtsPolicyTest {
     assertEquals("hello", CallTtsPolicy.normalize("  hello  ", 200));
     assertEquals(20, CallTtsPolicy.normalize("1234567890123456789012345", 1).length());
   }
+
+  @Test
+  public void groupScopeRejectsOtherChatsAndUnknownCalls() {
+    String scope = CallTtsSettings.TARGET_CALL_CHAT;
+    assertTrue(CallTtsPolicy.matchesChat(scope, "group-a", "group-a"));
+    assertFalse(CallTtsPolicy.matchesChat(scope, "group-b", "group-a"));
+    assertFalse(CallTtsPolicy.matchesChat(scope, "person", "group-a"));
+    assertFalse(CallTtsPolicy.matchesChat(scope, "group-a", null));
+    assertFalse(CallTtsPolicy.matchesChat(scope, "group-a", ""));
+    assertFalse(CallTtsPolicy.matchesChat(scope, null, "group-a"));
+    assertFalse(CallTtsPolicy.matchesChat(scope, null, null));
+  }
+
+  @Test
+  public void existingAllTargetRetainsAllChatBehavior() {
+    assertTrue(CallTtsPolicy.matchesChat(CallTtsSettings.TARGET_ALL, "group-b", "group-a"));
+    assertTrue(CallTtsPolicy.matchesChat(CallTtsSettings.TARGET_ALL, "person", null));
+  }
 }

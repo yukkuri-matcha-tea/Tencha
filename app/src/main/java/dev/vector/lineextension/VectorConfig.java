@@ -10,6 +10,7 @@ public class VectorConfig {
   public enum Category {
     PRIVACY(CAT_PRIVACY),
     CHAT(CAT_CHAT),
+    CALL(CAT_CALL),
     DISPLAY(CAT_DISPLAY),
     NOTIFICATION(CAT_NOTIFICATION),
     BACKUP(CAT_BACKUP),
@@ -79,9 +80,14 @@ public class VectorConfig {
   public final Item searchByMember               = item("search_by_member",                 OPT_SEARCH_BY_MEMBER_LABEL,                 OPT_SEARCH_BY_MEMBER_DESC,                 false, Category.CHAT,         SEC_CHAT_SEARCH);
   public final Item searchMin1Char               = item("search_min_1_char",                OPT_SEARCH_MIN_1_CHAR_LABEL,                OPT_SEARCH_MIN_1_CHAR_DESC,                false, Category.CHAT,         SEC_CHAT_SEARCH);
   public final Item showSecondsInChatTime        = item("show_seconds_in_chat_time",        OPT_SHOW_SECONDS_IN_CHAT_TIME_LABEL,        OPT_SHOW_SECONDS_IN_CHAT_TIME_DESC,        false, Category.CHAT,         SEC_CHAT_DISPLAY);
-  public final Item soundboard                   = item("soundboard",                       OPT_SOUNDBOARD_LABEL,                       OPT_SOUNDBOARD_DESC,                       true,  Category.CHAT,         SEC_CHAT_CALL);
-  public final Item callTts                      = item("call_tts",                         OPT_CALL_TTS_LABEL,                         OPT_CALL_TTS_DESC,                         true,  Category.CHAT,         SEC_CHAT_CALL);
-  public final Item independentCallMute          = item("independent_call_mute",            OPT_INDEPENDENT_CALL_MUTE_LABEL,            OPT_INDEPENDENT_CALL_MUTE_DESC,            false, Category.CHAT,         SEC_CHAT_CALL);
+  public final Item soundboard                   = item("soundboard",                       OPT_SOUNDBOARD_LABEL,                       OPT_SOUNDBOARD_DESC,                       true,  Category.CALL,         "音声送信");
+  public final Item callTts                      = item("call_tts",                         OPT_CALL_TTS_LABEL,                         OPT_CALL_TTS_DESC,                         true,  Category.CALL,         "音声送信");
+  public final Item independentCallMute          = item("independent_call_mute",            OPT_INDEPENDENT_CALL_MUTE_LABEL,            OPT_INDEPENDENT_CALL_MUTE_DESC,            false, Category.CALL,         "音声送信");
+  public final Item customCallRingtone = item("custom_call_ringtone", "着信音を変更", "選んだ音声ファイルを、この端末でLINE通話の着信音に使います。", false, Category.CALL, "着信音・呼び出し音");
+  public final Item callRingtoneFile = item("call_ringtone_file", "着信音ファイル", "端末の音声ファイルを選択します。", false, Category.CALL, "着信音・呼び出し音");
+  public final Item disablePeerRingback = item("disable_peer_ringback", "LINEデフォルトで使われてる呼出音", "相手が設定した曲の代わりに、LINE純正の呼出音を使います。相手側の設定は変わりません。『呼出音を変更』で有効なファイルを選んだ場合は、その音声を優先します。", false, Category.CALL, "着信音・呼び出し音");
+  public final Item customCallRingback = item("custom_call_ringback", "呼出音を変更", "相手を呼び出している間、自分側で聞く音を選んだ音声ファイルに変更します。相手へ聞かせる音は変更しません。", false, Category.CALL, "着信音・呼び出し音");
+  public final Item callRingbackFile = item("call_ringback_file", "呼出音ファイル", "端末の音声ファイルを選択します。", false, Category.CALL, "着信音・呼び出し音");
   public final Item selectAllInEditMode          = item("select_all_in_edit_mode",          OPT_SELECT_ALL_IN_EDIT_MODE_LABEL,          OPT_SELECT_ALL_IN_EDIT_MODE_DESC,          false, Category.CHAT,         SEC_CHAT_DISPLAY);
   public final Item hideAiIconPermanently        = item("hide_ai_icon_permanently",         OPT_HIDE_AI_ICON_PERMANENTLY_LABEL,         OPT_HIDE_AI_ICON_PERMANENTLY_DESC,         false, Category.CHAT,         SEC_CHAT_DISPLAY);
   public final Item openUrlInDefaultBrowser      = item("open_url_in_default_browser",      OPT_OPEN_URL_IN_DEFAULT_BROWSER_LABEL,      OPT_OPEN_URL_IN_DEFAULT_BROWSER_DESC,      false, Category.CHAT,         SEC_CHAT_DISPLAY);

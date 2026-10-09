@@ -50,6 +50,13 @@ final class CallTtsManager {
   private static String activeUtterance;
   private static String activeOutput;
   private static String selfDisplayName;
+  private static String callGroupChatId;
+
+  static void setCallGroupChatId(String chatId) {
+    synchronized (LOCK) {
+      callGroupChatId = chatId;
+    }
+  }
 
   private static final class Entry {
     final String text;
@@ -70,6 +77,7 @@ final class CallTtsManager {
       callStateCheckToken++;
       if (callActive) return;
       callActive = true;
+      callGroupChatId = null;
       sessionEnabled = false;
       selfDisplayName = null;
       clearLocked(false);
@@ -135,6 +143,7 @@ final class CallTtsManager {
   }
 
   private static void endCallLocked() {
+    callGroupChatId = null;
     callStateCheckToken++;
     callUiDetached = false;
     callActive = false;
@@ -155,10 +164,11 @@ final class CallTtsManager {
     }
   }
 
-  static void onCommittedSelfText(int token, String id, String mid, String name, String text) {
+  static void onCommittedSelfText(
+      int token, String id, String mid, String name, String text, String chatId) {
     synchronized (LOCK) {
       if (token != generation || !callActive || !sessionEnabled) return;
-      onTextMessage(id, mid, name, text, true);
+      onTextMessage(id, mid, name, text, true, chatId);
     }
   }
 
@@ -188,9 +198,15 @@ final class CallTtsManager {
   }
 
   static void onTextMessage(
-      String messageId, String senderMid, String senderName, String text, boolean fromSelf) {
+      String messageId,
+      String senderMid,
+      String senderName,
+      String text,
+      boolean fromSelf,
+      String chatId) {
     synchronized (LOCK) {
       if (!callActive) return;
+      if (!CallTtsPolicy.matchesChat(CallTtsSettings.target(), chatId, callGroupChatId)) return;
       if (senderMid != null && !senderMid.isEmpty()) {
         String name = senderName;
         if (name == null || name.trim().isEmpty())

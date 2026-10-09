@@ -1,0 +1,13 @@
+[
+  {"class":"Lip8/i0;","field":"a","descriptor":"Lip8/i0;","static":true},
+  {"class":"Lps7/a$a$a;","method":"d","descriptor":"(Landroid/content/Context;)La40/b;"},
+  {"class":"Lps7/a$a$b;","method":"d","descriptor":"(Landroid/content/Context;)La40/b;"},
+  {"class":"Lps7/a$b$b;","method":"b","descriptor":"(Landroid/content/Context;)La40/g;"},
+  {"class":"Lps7/a$b$a;","method":"b","descriptor":"(Landroid/content/Context;)La40/g;"},
+  {"class":"Lps7/a$b$a;","field":"a","descriptor":"Lps7/a$b$a;","static":true},
+  {"class":"La40/b;","method":"<init>","descriptor":"(Landroid/net/Uri;)V"},
+  {"class":"Lew7/i;","field":"l","descriptor":"Lkw7/a;"},
+  {"class":"Lkw7/a;","field":"j","descriptor":"Lcom/linecorp/voip2/access/connect/VoIPGroupCallConnectInfo;"},
+  {"class":"Lcom/linecorp/voip2/access/connect/VoIPGroupCallConnectInfoImpl;","method":"q","descriptor":"()Ljava/lang/String;"},
+  {"class":"Lcom/linecorp/voip2/service/groupcall/GroupCallFragment;","field":"d","descriptor":"Lew7/i;"}
+]

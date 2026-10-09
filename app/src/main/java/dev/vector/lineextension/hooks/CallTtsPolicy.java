@@ -35,6 +35,12 @@ final class CallTtsPolicy {
     return true;
   }
 
+  static boolean matchesChat(String target, String chatId, String callGroupChatId) {
+    if (!CallTtsSettings.TARGET_CALL_CHAT.equals(target)) return true;
+    // Fail closed when the call's group is unknown; never read unrelated chats as a fallback.
+    return callGroupChatId != null && !callGroupChatId.isEmpty() && callGroupChatId.equals(chatId);
+  }
+
   static String normalize(String text, int maxChars) {
     if (text == null) return null;
     String clean = text.trim();

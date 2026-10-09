@@ -183,10 +183,14 @@ final class SoundboardStore {
       MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
       boolean inputDone = false;
       boolean outputDone = false;
+      long lastProgress = System.nanoTime();
       while (!outputDone) {
+        if (System.nanoTime() - lastProgress > 15_000_000_000L)
+          throw new IllegalStateException("音声デコーダーが応答しません");
         if (!inputDone) {
           int inputIndex = codec.dequeueInputBuffer(10000);
           if (inputIndex >= 0) {
+            lastProgress = System.nanoTime();
             ByteBuffer input = codec.getInputBuffer(inputIndex);
             if (input == null) throw new IllegalStateException("デコーダー入力を取得できません");
             int size = extractor.readSampleData(input, 0);
@@ -201,6 +205,7 @@ final class SoundboardStore {
         }
         int outputIndex = codec.dequeueOutputBuffer(info, 10000);
         if (outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+          lastProgress = System.nanoTime();
           MediaFormat format = codec.getOutputFormat();
           sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE);
           channelCount = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
@@ -208,6 +213,7 @@ final class SoundboardStore {
             pcmEncoding = format.getInteger(MediaFormat.KEY_PCM_ENCODING);
           }
         } else if (outputIndex >= 0) {
+          lastProgress = System.nanoTime();
           ByteBuffer buffer = codec.getOutputBuffer(outputIndex);
           if (buffer != null && info.size > 0) {
             buffer.position(info.offset);
@@ -276,7 +282,7 @@ final class SoundboardStore {
     return result;
   }
 
-  private static void writeWav(File output, short[] samples, int sampleRate) throws Exception {
+  static void writeWav(File output, short[] samples, int sampleRate) throws Exception {
     int dataLength = samples.length * 2;
     try (FileOutputStream stream = new FileOutputStream(output, false)) {
       ByteBuffer header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN);

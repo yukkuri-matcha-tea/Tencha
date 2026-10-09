@@ -20,7 +20,7 @@ public class VectorConfigTest {
   public void independentCallMuteIsOptInAndWarnsAboutRemoteDisplay() {
     VectorConfig config = new VectorConfig();
     assertFalse(config.independentCallMute.enabled);
-    assertTrue(config.independentCallMute.category == VectorConfig.Category.CHAT);
+    assertTrue(config.independentCallMute.category == VectorConfig.Category.CALL);
     assertTrue(config.independentCallMute.section.equals(config.callTts.section));
     assertTrue(config.independentCallMute.description.contains("相手からはミュートしていない"));
     assertTrue(config.independentCallMute.description.contains("再起動"));
@@ -35,6 +35,23 @@ public class VectorConfigTest {
       assertTrue(item.key.matches("[a-z0-9_]{1,64}"));
       assertTrue("duplicate feature key: " + item.key, keys.add(item.key));
     }
+  }
+
+  @Test
+  public void callOptionsHaveTheirOwnCategoryAndToneChangesAreOptIn() {
+    VectorConfig config = new VectorConfig();
+    assertTrue(config.soundboard.category == VectorConfig.Category.CALL);
+    assertTrue(config.callTts.category == VectorConfig.Category.CALL);
+    assertTrue(config.customCallRingtone.category == VectorConfig.Category.CALL);
+    assertTrue(config.callRingtoneFile.category == VectorConfig.Category.CALL);
+    assertTrue(config.disablePeerRingback.category == VectorConfig.Category.CALL);
+    assertFalse(config.customCallRingtone.enabled);
+    assertFalse(config.disablePeerRingback.enabled);
+    assertFalse(config.customCallRingback.enabled);
+    assertTrue(config.callRingbackFile.category == VectorConfig.Category.CALL);
+    assertTrue(config.disablePeerRingback.label.equals("LINEデフォルトで使われてる呼出音"));
+    assertTrue(config.customCallRingback.description.contains("相手へ聞かせる音は変更しません"));
+    assertTrue(config.disablePeerRingback.description.contains("相手側の設定は変わりません"));
   }
 
   @Test

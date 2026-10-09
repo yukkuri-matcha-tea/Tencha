@@ -259,7 +259,7 @@ bool installSoundboardHook() {
     return false;
   }
   auto* target = reinterpret_cast<void*>(andromedaBase + kRecordCallbackOffset);
-  // Verified against LINE 26.14.0 and 26.15.0 arm64. Fail closed on another build.
+  // Verified against LINE 26.14.0 / 26.15.0; 26.15.1 has the identical arm64 library.
   const std::uint32_t expected[] = {0xD10183FFU, 0xA9037BFDU, 0xF90023F5U, 0xA9054FF4U};
   if (std::memcmp(target, expected, sizeof(expected)) != 0) {
     __android_log_print(ANDROID_LOG_ERROR, kTag, "Recording callback signature changed");
