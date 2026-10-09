@@ -83,11 +83,11 @@ public class VectorConfig {
   public final Item soundboard                   = item("soundboard",                       OPT_SOUNDBOARD_LABEL,                       OPT_SOUNDBOARD_DESC,                       true,  Category.CALL,         "音声送信");
   public final Item callTts                      = item("call_tts",                         OPT_CALL_TTS_LABEL,                         OPT_CALL_TTS_DESC,                         true,  Category.CALL,         "音声送信");
   public final Item independentCallMute          = item("independent_call_mute",            OPT_INDEPENDENT_CALL_MUTE_LABEL,            OPT_INDEPENDENT_CALL_MUTE_DESC,            false, Category.CALL,         "音声送信");
-  public final Item customCallRingtone = item("custom_call_ringtone", "着信音を変更", "選んだ音声ファイルを、この端末でLINE通話の着信音に使います。", false, Category.CALL, "着信音・呼び出し音");
-  public final Item callRingtoneFile = item("call_ringtone_file", "着信音ファイル", "端末の音声ファイルを選択します。", false, Category.CALL, "着信音・呼び出し音");
-  public final Item disablePeerRingback = item("disable_peer_ringback", "LINEデフォルトで使われてる呼出音", "相手が設定した曲の代わりに、LINE純正の呼出音を使います。相手側の設定は変わりません。『呼出音を変更』で有効なファイルを選んだ場合は、その音声を優先します。", false, Category.CALL, "着信音・呼び出し音");
-  public final Item customCallRingback = item("custom_call_ringback", "呼出音を変更", "相手を呼び出している間、自分側で聞く音を選んだ音声ファイルに変更します。相手へ聞かせる音は変更しません。", false, Category.CALL, "着信音・呼び出し音");
-  public final Item callRingbackFile = item("call_ringback_file", "呼出音ファイル", "端末の音声ファイルを選択します。", false, Category.CALL, "着信音・呼び出し音");
+  public final Item customCallRingtone = item("custom_call_ringtone", "着信音を変更", "この端末で鳴る着信音を、選んだ音声に変更します。", false, Category.CALL, "着信音");
+  public final Item callRingtoneFile = item("call_ringtone_file", "音声ファイル", "着信音に使う音声を選択します。", false, Category.CALL, "着信音");
+  public final Item customCallRingback = item("custom_call_ringback", "呼出音を変更", "相手を呼び出すとき、自分側で聞く音を変更します。相手へ聞かせる音は変更しません。", false, Category.CALL, "呼出音");
+  public final Item callRingbackFile = item("call_ringback_file", "音声ファイル", "呼出音に使う音声を選択します。", false, Category.CALL, "呼出音");
+  public final Item disablePeerRingback = item("disable_peer_ringback", "LINE標準の呼出音", "相手が設定した曲の代わりに、LINE標準の音を使います。相手側の設定は変わりません。有効な音声ファイルでの変更がONの場合は、そちらを優先します。", false, Category.CALL, "呼出音");
   public final Item selectAllInEditMode          = item("select_all_in_edit_mode",          OPT_SELECT_ALL_IN_EDIT_MODE_LABEL,          OPT_SELECT_ALL_IN_EDIT_MODE_DESC,          false, Category.CHAT,         SEC_CHAT_DISPLAY);
   public final Item hideAiIconPermanently        = item("hide_ai_icon_permanently",         OPT_HIDE_AI_ICON_PERMANENTLY_LABEL,         OPT_HIDE_AI_ICON_PERMANENTLY_DESC,         false, Category.CHAT,         SEC_CHAT_DISPLAY);
   public final Item openUrlInDefaultBrowser      = item("open_url_in_default_browser",      OPT_OPEN_URL_IN_DEFAULT_BROWSER_LABEL,      OPT_OPEN_URL_IN_DEFAULT_BROWSER_DESC,      false, Category.CHAT,         SEC_CHAT_DISPLAY);

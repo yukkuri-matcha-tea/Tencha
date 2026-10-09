@@ -3,6 +3,7 @@ package dev.vector.lineextension;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import org.junit.Test;
@@ -49,7 +50,13 @@ public class VectorConfigTest {
     assertFalse(config.disablePeerRingback.enabled);
     assertFalse(config.customCallRingback.enabled);
     assertTrue(config.callRingbackFile.category == VectorConfig.Category.CALL);
-    assertTrue(config.disablePeerRingback.label.equals("LINEデフォルトで使われてる呼出音"));
+    assertTrue(config.disablePeerRingback.label.equals("LINE標準の呼出音"));
+    assertTrue(config.customCallRingtone.section.equals(config.callRingtoneFile.section));
+    assertTrue(config.customCallRingback.section.equals(config.callRingbackFile.section));
+    assertFalse(config.customCallRingback.section.equals(config.customCallRingtone.section));
+    assertTrue(
+        Arrays.asList(config.items).indexOf(config.callRingbackFile)
+            < Arrays.asList(config.items).indexOf(config.disablePeerRingback));
     assertTrue(config.customCallRingback.description.contains("相手へ聞かせる音は変更しません"));
     assertTrue(config.disablePeerRingback.description.contains("相手側の設定は変わりません"));
   }

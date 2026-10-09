@@ -995,7 +995,11 @@ public class SettingsUIInjector implements BaseHook {
                 true,
                 null,
                 view -> openCallTonePicker(ctx, kind));
-        if (row != null) row.setTag(kind.label + " ファイル 音声 選択");
+        if (row != null) {
+          // A tone's switch and picker are one group: divide AFTER the picker, not between them.
+          LineTheme.setRowDividerVisible(row, true);
+          row.setTag(kind.label + " ファイル 音声 選択");
+        }
         return;
       }
       if (i.key.equals("custom_font_path")) {
@@ -1027,7 +1031,11 @@ public class SettingsUIInjector implements BaseHook {
         Reflect.callMethod(row, currentCfg.settings.methodSetSyncStatus, statusEnum);
 
       Reflect.callMethod(row, currentCfg.settings.methodSetChecked, isEnabled);
-      Reflect.callMethod(row, currentCfg.settings.methodSetDividerVisible, true);
+      boolean toneRow =
+          i.key.equals("custom_call_ringtone")
+              || i.key.equals("custom_call_ringback")
+              || i.key.equals("disable_peer_ringback");
+      Reflect.callMethod(row, currentCfg.settings.methodSetDividerVisible, !toneRow);
 
       Runnable updateUI = () -> applyItemDisabledState(row, i, currentCfg);
       uiUpdateCallbacks.add(updateUI);
