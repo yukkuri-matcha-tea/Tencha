@@ -54,6 +54,7 @@ public class VersionSpoof implements BaseHook {
           .intercept(limitPatch);
     } catch (Throwable t) {
       Vector.log("Tencha: UI limit patch failed: " + t.getMessage());
+      throw new IllegalStateException("Unsend UI limit registration failed", t);
     }
   }
 

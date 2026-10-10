@@ -220,6 +220,7 @@ public class LineVersion {
       public String controllerDecoViewModelField = "";
       public String editorRendererField = "";
       public String editorDecoViewModelField = "";
+      public String editorSelectionFrameField = "F";
       public String popupBindingField = "";
       public String popupWindowField = "";
       public String bindingRootField = "";
@@ -227,6 +228,8 @@ public class LineVersion {
       public String methodResetDecorations = "";
       public String methodSelectedDecoration = "";
       public String methodGetDecorationView = "";
+      public String mediaValueClass = "cn6.y$e";
+      public String methodLoadImageIntoView = "S";
       public String methodOpenDecorationEditor = "";
       public String methodSaveDecorations = "";
     }
@@ -451,6 +454,7 @@ public class LineVersion {
       public String searchResultWrapperClass = "";
       public String searchBoxViewClass = "";
       public String searchBoxEditTextField = "";
+      public String searchBoxIconField = "d";
       public String searchKeywordEventClass = "";
       public String searchKeywordEventKeywordField = "";
       public String searchPresenterKeywordChangedMethod = "";
@@ -539,6 +543,8 @@ public class LineVersion {
       public String firebaseDispatcherMethod = "";
       public String firebaseDispatcherContextField = "";
       public String firebaseDispatcherQueueField = "";
+      public String firebaseQueueClass = "";
+      public String firebaseQueueGetInstanceMethod = "";
       public String firebaseBindDeliveryClass = "";
       public String firebaseBindDeliveryMethod = "";
       public String firebaseMessagingServiceClass = "";

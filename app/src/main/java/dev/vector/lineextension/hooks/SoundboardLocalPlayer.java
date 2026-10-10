@@ -4,32 +4,21 @@ import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioTrack;
 import dev.vector.lineextension.Vector;
-import java.util.Arrays;
 
 /** A single local AudioTrack fed by an unbounded logical tap timeline. */
 final class SoundboardLocalPlayer {
   private static final int SAMPLE_RATE = 16000;
   private static final int FRAME_SAMPLES = 320;
   private static final Object LOCK = new Object();
-  private static long[] timeline = new long[FRAME_SAMPLES * 8];
-  private static int readIndex;
-  private static int validEnd;
+  private static final PcmVoiceMixer mixer = new PcmVoiceMixer();
   private static Thread worker;
   private static boolean stopRequested;
 
   private SoundboardLocalPlayer() {}
 
   static void enqueue(short[] pcm) {
-    enqueue(pcm, false);
-  }
-
-  private static void enqueue(short[] pcm, boolean sequential) {
     synchronized (LOCK) {
-      compactIfUseful(pcm.length);
-      int start = sequential ? validEnd : readIndex;
-      ensureCapacity(start + pcm.length);
-      for (int i = 0; i < pcm.length; i++) timeline[start + i] += pcm[i];
-      validEnd = Math.max(validEnd, start + pcm.length);
+      mixer.enqueue(pcm);
       stopRequested = false;
       if (worker == null || !worker.isAlive()) {
         worker = new Thread(SoundboardLocalPlayer::runMixer, "TenchaSoundboardLocal");
@@ -41,9 +30,7 @@ final class SoundboardLocalPlayer {
 
   static void clear() {
     synchronized (LOCK) {
-      Arrays.fill(timeline, 0, validEnd, 0L);
-      readIndex = 0;
-      validEnd = 0;
+      mixer.clear();
       stopRequested = true;
       LOCK.notifyAll();
     }
@@ -76,20 +63,10 @@ final class SoundboardLocalPlayer {
       while (true) {
         int count;
         synchronized (LOCK) {
-          if (stopRequested || readIndex >= validEnd) break;
-          count = Math.min(frame.length, validEnd - readIndex);
-          for (int i = 0; i < count; i++) {
-            long mixed = timeline[readIndex];
-            timeline[readIndex++] = 0L;
-            frame[i] = (short) Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, mixed));
-          }
-          Arrays.fill(frame, count, frame.length, (short) 0);
-          if (readIndex >= validEnd) {
-            readIndex = 0;
-            validEnd = 0;
-          }
+          if (stopRequested || mixer.isEmpty()) break;
+          count = mixer.render(frame);
         }
-        track.write(frame, 0, frame.length, AudioTrack.WRITE_BLOCKING);
+        track.write(frame, 0, count, AudioTrack.WRITE_BLOCKING);
       }
     } catch (Throwable error) {
       Vector.log("Tencha: local soundboard monitor failed", error);
@@ -103,27 +80,11 @@ final class SoundboardLocalPlayer {
       }
       synchronized (LOCK) {
         worker = null;
-        if (validEnd > readIndex && !stopRequested) {
+        if (!mixer.isEmpty() && !stopRequested) {
           worker = new Thread(SoundboardLocalPlayer::runMixer, "TenchaSoundboardLocal");
           worker.start();
         }
       }
     }
-  }
-
-  private static void compactIfUseful(int incoming) {
-    if (readIndex == 0 || timeline.length - validEnd >= incoming) return;
-    int remaining = validEnd - readIndex;
-    System.arraycopy(timeline, readIndex, timeline, 0, remaining);
-    Arrays.fill(timeline, remaining, validEnd, 0L);
-    readIndex = 0;
-    validEnd = remaining;
-  }
-
-  private static void ensureCapacity(int required) {
-    if (required <= timeline.length) return;
-    int capacity = timeline.length;
-    while (capacity < required) capacity = Math.max(capacity * 2, required);
-    timeline = Arrays.copyOf(timeline, capacity);
   }
 }

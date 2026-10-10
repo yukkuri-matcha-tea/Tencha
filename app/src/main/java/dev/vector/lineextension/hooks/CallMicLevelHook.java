@@ -33,6 +33,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /** Displays LINE's recording level and controls each remote participant's RX gain. */
 public final class CallMicLevelHook implements BaseHook {
@@ -49,6 +52,10 @@ public final class CallMicLevelHook implements BaseHook {
   private static volatile WeakReference<Object> audioControlRef = new WeakReference<>(null);
   private static final Map<Activity, Meter> meters = new WeakHashMap<>();
   private static final Handler UI_HANDLER = new Handler(Looper.getMainLooper());
+  private static final ExecutorService SOUND_LOADER =
+      Executors.newSingleThreadExecutor(r -> new Thread(r, "TenchaSoundboardLoad"));
+  private static final AtomicInteger soundboardGeneration = new AtomicInteger();
+  private static final Object SOUND_PLAYBACK_LOCK = new Object();
   private static volatile Method setVolumeMethod;
   private static volatile Object callSettingsMenuItem;
   private static final ThreadLocal<Boolean> independentMuteCall = new ThreadLocal<>();
@@ -228,7 +235,7 @@ public final class CallMicLevelHook implements BaseHook {
             chain -> {
               Activity activity = (Activity) chain.getThisObject();
               hide(activity, false);
-              if (Main.options.callTts.enabled) CallTtsManager.onCallUiDestroyed(activity);
+              CallTtsManager.onCallUiDestroyed(activity);
               return chain.proceed();
             });
     installCallSettingsMenuItem(lpparam.classLoader);
@@ -239,7 +246,7 @@ public final class CallMicLevelHook implements BaseHook {
     if (!anyCallControlEnabled() || activity.isFinishing() || meters.containsKey(activity)) {
       return;
     }
-    if (Main.options.callTts.enabled) CallTtsManager.startCall(activity);
+    CallTtsManager.startCall(activity);
     captureCallChat(activity);
     activity.getWindow().getDecorView().postDelayed(() -> captureCallChat(activity), 600L);
     captureOwnCallName(activity);
@@ -571,7 +578,7 @@ public final class CallMicLevelHook implements BaseHook {
     }
     if (meter == null) return;
     mainHandler.removeCallbacks(meter.update);
-    stopAllSoundboardPlaybacks(meter);
+    if (callEnded) stopAllSoundboardPlaybacks(meter);
     resetAllVolumes(meter);
     if (meter.root.getParent() == meter.parent) meter.parent.removeView(meter.root);
   }
@@ -619,22 +626,40 @@ public final class CallMicLevelHook implements BaseHook {
   }
 
   private static void playSoundboard(Activity activity, Meter meter, SoundboardStore.Clip clip) {
-    try {
-      short[] pcm = SoundboardStore.readPcm16(clip);
-      if (!NativeCallBridge.enqueueSoundboard(activity, pcm)) {
-        Toast.makeText(activity, "音声を送信できません", Toast.LENGTH_SHORT).show();
-        return;
-      }
-      SoundboardLocalPlayer.enqueue(pcm);
-      SoundboardPlayback playback = new SoundboardPlayback(clip.id);
-      meter.soundboardPlaybacks.add(playback);
-      updateSoundboardButtons(meter);
-      UI_HANDLER.postDelayed(
-          () -> stopSoundboardPlayback(meter, playback), SoundboardStore.durationMs(clip) + 150L);
-    } catch (Throwable error) {
-      Vector.log("Tencha: soundboard playback failed", error);
-      Toast.makeText(activity, "音声を送信できません", Toast.LENGTH_SHORT).show();
-    }
+    final int generation = soundboardGeneration.get();
+    final Context context = activity.getApplicationContext();
+    final WeakReference<Meter> target = new WeakReference<>(meter);
+    final SoundboardPlayback playback = new SoundboardPlayback(clip.id);
+    meter.soundboardPlaybacks.add(playback);
+    updateSoundboardButtons(meter);
+    SOUND_LOADER.execute(
+        () -> {
+          try {
+            if (generation != soundboardGeneration.get()) return;
+            short[] pcm = SoundboardStore.readPcm16(clip);
+            synchronized (SOUND_PLAYBACK_LOCK) {
+              if (generation != soundboardGeneration.get()) return;
+              if (!NativeCallBridge.enqueueSoundboard(context, pcm, SoundboardStore.pcmKey(clip)))
+                throw new IllegalStateException("Native mixer rejected PCM");
+              SoundboardLocalPlayer.enqueue(pcm);
+            }
+            UI_HANDLER.postDelayed(
+                () -> {
+                  Meter current = target.get();
+                  if (current != null) stopSoundboardPlayback(current, playback);
+                },
+                SoundboardStore.durationMs(clip) + 150L);
+          } catch (Throwable error) {
+            Vector.log("Tencha: soundboard playback failed", error);
+            UI_HANDLER.post(
+                () -> {
+                  Meter current = target.get();
+                  if (current != null) stopSoundboardPlayback(current, playback);
+                  if (generation == soundboardGeneration.get())
+                    Toast.makeText(context, "音声を送信できません", Toast.LENGTH_SHORT).show();
+                });
+          }
+        });
   }
 
   private static void stopSoundboardPlayback(Meter meter, SoundboardPlayback playback) {
@@ -644,9 +669,16 @@ public final class CallMicLevelHook implements BaseHook {
 
   private static void stopAllSoundboardPlaybacks(Meter meter) {
     meter.soundboardPlaybacks.clear();
-    NativeCallBridge.clearSoundboard();
-    SoundboardLocalPlayer.clear();
+    onCallEnded();
     updateSoundboardButtons(meter);
+  }
+
+  static void onCallEnded() {
+    synchronized (SOUND_PLAYBACK_LOCK) {
+      soundboardGeneration.incrementAndGet();
+      NativeCallBridge.clearSoundboard();
+      SoundboardLocalPlayer.clear();
+    }
   }
 
   private static void updateSoundboardButtons(Meter meter) {

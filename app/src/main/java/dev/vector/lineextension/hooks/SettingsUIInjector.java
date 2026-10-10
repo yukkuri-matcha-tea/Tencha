@@ -1315,7 +1315,7 @@ public class SettingsUIInjector implements BaseHook {
         true,
         null,
         view -> openSoundboardManager(ctx));
-    tagLastChild(parent, "サウンドボード 音声 追加 削除");
+    tagLastChild(parent, "サウンドボード 音声 追加 削除 並び替え 順番");
   }
 
   private void injectCallTtsSettingsRow(LayoutInflater infl, LinearLayout parent, Context ctx) {
@@ -1332,39 +1332,66 @@ public class SettingsUIInjector implements BaseHook {
   }
 
   private void openSoundboardManager(Context ctx) {
-    List<SoundboardStore.Clip> clips = SoundboardStore.load(ctx);
-    String[] choices = new String[clips.size() + 1];
-    choices[0] = "＋ 音声を追加";
-    for (int i = 0; i < clips.size(); i++) choices[i + 1] = clips.get(i).name;
-    AlertDialog dialog =
+    SoundboardManagerDialog.show(
+        ctx,
+        () -> openSoundboardPicker(ctx),
+        clip -> showSoundboardClipActions(ctx, clip),
+        clip -> showSoundboardMovePicker(ctx, clip),
+        () -> {
+          if (onSettingsReloadRequest != null) onSettingsReloadRequest.run();
+        });
+  }
+
+  private void showSoundboardClipActions(Context ctx, SoundboardStore.Clip clip) {
+    LineTheme.applyDialogColors(
         new AlertDialog.Builder(ctx, LineTheme.dialogTheme(ctx))
-            .setTitle("サウンドボード音声")
-            .setItems(
-                choices,
-                (d, which) -> {
-                  if (which == 0) {
-                    openSoundboardPicker(ctx);
-                    return;
-                  }
-                  SoundboardStore.Clip clip = clips.get(which - 1);
-                  LineTheme.applyDialogColors(
-                      new AlertDialog.Builder(ctx, LineTheme.dialogTheme(ctx))
-                          .setTitle(clip.name)
-                          .setMessage("この音声を削除しますか？")
-                          .setPositiveButton(
-                              "削除",
-                              (confirm, button) -> {
-                                SoundboardStore.remove(ctx, clip);
-                                Toast.makeText(ctx, "削除しました", Toast.LENGTH_SHORT).show();
-                              })
-                          .setNegativeButton(ModuleStrings.SETTINGS_CANCEL, null)
-                          .show(),
-                      ctx);
+            .setTitle(clip.name)
+            .setMessage("この音声を削除しますか？")
+            .setPositiveButton(
+                "削除",
+                (confirm, button) -> {
+                  SoundboardStore.remove(ctx, clip);
+                  Toast.makeText(ctx, "削除しました", Toast.LENGTH_SHORT).show();
+                  if (onSettingsReloadRequest != null) onSettingsReloadRequest.run();
+                  openSoundboardManager(ctx);
                 })
             .setNegativeButton(ModuleStrings.SETTINGS_CANCEL, null)
-            .create();
-    dialog.show();
-    LineTheme.applyDialogColors(dialog, ctx);
+            .show(),
+        ctx);
+  }
+
+  private void showSoundboardMovePicker(Context ctx, SoundboardStore.Clip clip) {
+    List<SoundboardStore.Clip> clips = SoundboardStore.load(ctx);
+    String[] positions = new String[clips.size()];
+    int checked = -1;
+    for (int index = 0; index < clips.size(); index++) {
+      SoundboardStore.Clip candidate = clips.get(index);
+      positions[index] = (index + 1) + ". " + candidate.name;
+      if (candidate.id.equals(clip.id)) checked = index;
+    }
+    if (checked < 0) {
+      Toast.makeText(ctx, "音声が見つかりません", Toast.LENGTH_SHORT).show();
+      openSoundboardManager(ctx);
+      return;
+    }
+    LineTheme.applyDialogColors(
+        new AlertDialog.Builder(ctx, LineTheme.dialogTheme(ctx))
+            .setTitle("移動先を選択")
+            .setSingleChoiceItems(
+                positions,
+                checked,
+                (dialog, which) -> {
+                  String targetId = clips.get(which).id;
+                  if (!clip.id.equals(targetId) && !SoundboardStore.move(ctx, clip.id, targetId)) {
+                    Toast.makeText(ctx, "並び替えできません。もう一度選択してください。", Toast.LENGTH_LONG).show();
+                  }
+                  dialog.dismiss();
+                  if (onSettingsReloadRequest != null) onSettingsReloadRequest.run();
+                  openSoundboardManager(ctx);
+                })
+            .setNegativeButton(ModuleStrings.SETTINGS_CANCEL, null)
+            .show(),
+        ctx);
   }
 
   private void openSoundboardPicker(Context ctx) {
@@ -1482,7 +1509,10 @@ public class SettingsUIInjector implements BaseHook {
                     .setPositiveButton(
                         ModuleStrings.SETTINGS_RESET_OK,
                         (d, w) -> {
-                          SettingsStore.reset();
+                          if (!SettingsStore.reset()) {
+                            Toast.makeText(activeCtx, "設定を初期化できませんでした", Toast.LENGTH_SHORT).show();
+                            return;
+                          }
                           SettingsStore.load(Main.options);
                           pendingRestart = true;
                           if (onSettingsReloadRequest != null) onSettingsReloadRequest.run();

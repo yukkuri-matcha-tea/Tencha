@@ -77,11 +77,11 @@ final class NativeCallBridge {
     }
   }
 
-  static boolean enqueueSoundboard(Context context, short[] pcm) {
+  static boolean enqueueSoundboard(Context context, short[] pcm, String key) {
     if (!supportsRecordingMixer() || pcm == null || pcm.length == 0 || !ensureLoaded(context))
       return false;
     try {
-      return nativeInstallSoundboardMixer() && nativeEnqueueSoundboard(pcm);
+      return nativeInstallSoundboardMixer() && nativeEnqueueSoundboard(pcm, key);
     } catch (Throwable error) {
       Log.e("TenchaCall", "Soundboard PCM enqueue failed", error);
       Vector.log("Tencha: soundboard PCM enqueue failed", error);
@@ -158,7 +158,7 @@ final class NativeCallBridge {
 
   private static native boolean nativeInstallSoundboardMixer();
 
-  private static native boolean nativeEnqueueSoundboard(short[] pcm);
+  private static native boolean nativeEnqueueSoundboard(short[] pcm, String key);
 
   private static native boolean nativeEnqueueTts(short[] pcm);
 

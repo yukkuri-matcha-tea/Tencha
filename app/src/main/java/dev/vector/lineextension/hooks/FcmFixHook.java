@@ -198,9 +198,18 @@ public class FcmFixHook implements BaseHook {
 
     try {
       Context appContext = context.getApplicationContext();
-      Class<?> dispatcherClass = Reflect.findClass(fixCfg.firebaseDispatcherClass, cl);
-      Object dispatcher =
-          Reflect.getStaticObjectField(dispatcherClass, fixCfg.firebaseDispatcherSingletonField);
+      Object dispatcher;
+      if (!fixCfg.firebaseQueueClass.isEmpty()) {
+        dispatcher =
+            Reflect.callStaticMethod(
+                Reflect.findClass(fixCfg.firebaseQueueClass, cl),
+                fixCfg.firebaseQueueGetInstanceMethod);
+      } else {
+        dispatcher =
+            Reflect.getStaticObjectField(
+                Reflect.findClass(fixCfg.firebaseDispatcherClass, cl),
+                fixCfg.firebaseDispatcherSingletonField);
+      }
       if (dispatcher == null) {
         return false;
       }
@@ -271,6 +280,7 @@ public class FcmFixHook implements BaseHook {
       Vector.log("Tencha: FIS cert digest hook installed on " + fixCfg.fisCertDigestClass);
     } catch (Throwable t) {
       Vector.log("Tencha: FIS cert digest hook failed: " + t);
+      throw new IllegalStateException("FIS digest registration failed", t);
     }
   }
 
@@ -308,6 +318,7 @@ public class FcmFixHook implements BaseHook {
       Vector.log("Tencha: GMS signature check hook installed on " + fixCfg.gmsSignatureCheckClass);
     } catch (Throwable t) {
       Vector.log("Tencha: GMS signature check hook failed: " + t);
+      throw new IllegalStateException("GMS signature registration failed", t);
     }
   }
 
@@ -335,6 +346,7 @@ public class FcmFixHook implements BaseHook {
       Vector.log("Tencha: GMS availability hook installed on " + fixCfg.gmsAvailabilityClass);
     } catch (Throwable t) {
       Vector.log("Tencha: GMS availability hook failed: " + t);
+      throw new IllegalStateException("GMS availability registration failed", t);
     }
   }
 
@@ -364,8 +376,7 @@ public class FcmFixHook implements BaseHook {
               cfg.firebaseMessagingTokenFreshMethod,
               m -> m.getParameterTypes().length == 1 && m.getReturnType() == boolean.class);
       if (fresh == null) {
-        Vector.log("Tencha: FirebaseMessaging freshness method not found");
-        return;
+        throw new NoSuchMethodException("FirebaseMessaging freshness method not found");
       }
       Vector.module
           .hook(fresh)
@@ -381,6 +392,7 @@ public class FcmFixHook implements BaseHook {
       Vector.log("Tencha: FirebaseMessaging token refresh hook installed");
     } catch (Throwable t) {
       Vector.log("Tencha: failed to install FirebaseMessaging refresh hook: " + t);
+      throw new IllegalStateException("FCM freshness registration failed", t);
     }
   }
 
@@ -472,6 +484,8 @@ public class FcmFixHook implements BaseHook {
     }
     final LineVersion.Config.NotificationFix fixCfg = versionConfig.notificationFix;
 
+    validateRegistration(cl, fixCfg, isFisMode(config));
+
     lastClassLoader = cl;
 
     // GMS availability/signature hooks apply to both FIS and Legy modes.
@@ -525,7 +539,8 @@ public class FcmFixHook implements BaseHook {
                   return chain.proceed();
                 }
               });
-    } catch (Throwable ignored) {
+    } catch (Throwable failure) {
+      throw new IllegalStateException("LEGY lifecycle registration failed", failure);
     }
 
     try {
@@ -537,7 +552,8 @@ public class FcmFixHook implements BaseHook {
                 logVerbose("blocked legy streaming disconnect runnable");
                 return null;
               });
-    } catch (Throwable ignored) {
+    } catch (Throwable failure) {
+      throw new IllegalStateException("LEGY disconnect registration failed", failure);
     }
 
     try {
@@ -580,7 +596,8 @@ public class FcmFixHook implements BaseHook {
                   logVerbose("LINE received Firebase token refresh: " + chain.getArg(0));
                 return chain.proceed();
               });
-    } catch (Throwable ignored) {
+    } catch (Throwable failure) {
+      throw new IllegalStateException("LINE FCM service registration failed", failure);
     }
 
     try {
@@ -606,7 +623,8 @@ public class FcmFixHook implements BaseHook {
                 logIntent("FirebaseInstanceIdReceiver received", intent);
                 return chain.proceed();
               });
-    } catch (Throwable ignored) {
+    } catch (Throwable failure) {
+      throw new IllegalStateException("FCM receiver registration failed", failure);
     }
 
     try {
@@ -642,7 +660,8 @@ public class FcmFixHook implements BaseHook {
                     fixCfg.firebaseCompletedTaskMethod,
                     Integer.valueOf(-1));
               });
-    } catch (Throwable ignored) {
+    } catch (Throwable failure) {
+      throw new IllegalStateException("FCM dispatcher registration failed", failure);
     }
 
     try {
@@ -659,7 +678,8 @@ public class FcmFixHook implements BaseHook {
                 logIntent("Firebase bind-delivery queued", (Intent) chain.getArg(0));
                 return chain.proceed();
               });
-    } catch (Throwable ignored) {
+    } catch (Throwable failure) {
+      throw new IllegalStateException("FCM bind delivery registration failed", failure);
     }
 
     try {
@@ -676,7 +696,8 @@ public class FcmFixHook implements BaseHook {
                 logIntent("FirebaseMessagingService handling", (Intent) chain.getArg(0));
                 return chain.proceed();
               });
-    } catch (Throwable ignored) {
+    } catch (Throwable failure) {
+      throw new IllegalStateException("FCM message handler registration failed", failure);
     }
 
     try {
@@ -702,7 +723,68 @@ public class FcmFixHook implements BaseHook {
                 logIntent("LineFirebaseMessagingService onStartCommand", (Intent) chain.getArg(0));
                 return chain.proceed();
               });
-    } catch (Throwable ignored) {
+    } catch (Throwable failure) {
+      throw new IllegalStateException("FCM start service registration failed", failure);
+    }
+  }
+
+  private static void validateRegistration(
+      ClassLoader cl, LineVersion.Config.NotificationFix c, boolean fis) throws Throwable {
+    Reflect.findMethodExact(
+        c.gmsSignatureCheckClass, cl, c.gmsSignatureCheckMethod, PackageInfo.class, boolean.class);
+    Reflect.findMethodExact(
+        c.gmsAvailabilityClass, cl, c.gmsAvailabilityMethod, Context.class, int.class);
+    Class<?> fm = Reflect.findClass(c.firebaseMessagingClass, cl);
+    Class<?> app = Reflect.findClass(c.firebaseAppClass, cl);
+    Reflect.findMethodExact(app, c.firebaseAppGetInstanceMethod);
+    Reflect.findMethodExact(fm, "getInstance", app);
+    if (findDeclaredMethod(fm, c.firebaseMessagingGetTokenMethod, FcmFixHook::isBlockingGetToken)
+            == null
+        || findDeclaredMethod(
+                fm,
+                c.firebaseMessagingTokenFreshMethod,
+                m -> m.getParameterCount() == 1 && m.getReturnType() == boolean.class)
+            == null) {
+      throw new NoSuchMethodException("FCM token methods are unavailable");
+    }
+    if (fis) {
+      Reflect.findMethodExact(
+          c.fisCertDigestClass, cl, c.fisCertDigestMethod, Context.class, String.class);
+      return;
+    }
+    Reflect.findMethodExact(
+        c.legyStreamingLifecycleClass,
+        cl,
+        c.legyStreamingLifecycleMethod,
+        Reflect.findClass(c.legyLifecycleOwnerClass, cl),
+        Reflect.findClass(c.legyLifecycleEventClass, cl));
+    Reflect.findMethodExact(c.legyDisconnectRunnableClass, cl, "run");
+    Class<?> service = Reflect.findClass(c.lineFcmServiceClass, cl);
+    Reflect.findMethodExact(
+        service, c.lineFcmDispatchMethod, Reflect.findClass(c.firebaseRemoteMessageClass, cl));
+    Reflect.findMethodExact(service, c.lineFcmTokenMethod, String.class);
+    Reflect.findMethodExact(
+        c.firebaseReceiverClass,
+        cl,
+        c.firebaseReceiverMethod,
+        Context.class,
+        Reflect.findClass(c.firebaseReceiverEnvelopeClass, cl));
+    Reflect.findMethodExact(
+        c.firebaseDispatcherClass, cl, c.firebaseDispatcherMethod, Intent.class);
+    Reflect.findMethodExact(
+        c.firebaseBindDeliveryClass, cl, c.firebaseBindDeliveryMethod, Intent.class);
+    Reflect.findMethodExact(
+        c.firebaseMessagingServiceClass, cl, c.firebaseMessagingHandleMethod, Intent.class);
+    Reflect.findMethodExact(
+        c.lineFcmServiceBaseClass, cl, "onStartCommand", Intent.class, int.class, int.class);
+    Reflect.findMethodExact(
+        c.firebaseWakefulStartClass, cl, c.firebaseWakefulStartMethod, Context.class, Intent.class);
+    Reflect.findMethodExact(
+        c.firebaseCompletedTaskClass, cl, c.firebaseCompletedTaskMethod, Object.class);
+    if (!c.firebaseQueueClass.isEmpty()) {
+      Class<?> queue = Reflect.findClass(c.firebaseQueueClass, cl);
+      Reflect.findMethodExact(queue, c.firebaseQueueGetInstanceMethod);
+      queue.getDeclaredField(c.firebaseDispatcherQueueField);
     }
   }
 }

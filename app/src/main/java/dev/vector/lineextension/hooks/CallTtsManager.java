@@ -143,6 +143,7 @@ final class CallTtsManager {
   }
 
   private static void endCallLocked() {
+    CallMicLevelHook.onCallEnded();
     callGroupChatId = null;
     callStateCheckToken++;
     callUiDetached = false;

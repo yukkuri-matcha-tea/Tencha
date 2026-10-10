@@ -54,6 +54,15 @@ public class HeaderButtonInjector implements BaseHook {
       ctorParams.add(config.chatHeader.fieldAppInfoPkg);
       ctorParams.add(config.chatHeader.fieldAppInfoId);
 
+      // Resolve required methods before registering any constructor interception.
+      Reflect.findMethodExact(
+          headerControllerClass,
+          config.main.methodSetHeaderButton,
+          headerButtonTypeEnum,
+          config.main.headerInterfaceA);
+      headerControllerClass.getDeclaredField(config.main.fieldHeaderHelper);
+      headerControllerClass.getDeclaredField(config.main.fieldChatActivity);
+
       Vector.module
           .hook(Reflect.findConstructorExact(headerControllerClass, ctorParams.toArray()))
           .intercept(
@@ -118,6 +127,7 @@ public class HeaderButtonInjector implements BaseHook {
 
     } catch (Throwable t) {
       Vector.log("Tencha: init error: " + t.getMessage());
+      throw t;
     }
   }
 

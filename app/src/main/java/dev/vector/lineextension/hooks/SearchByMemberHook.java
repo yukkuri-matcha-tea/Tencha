@@ -89,6 +89,31 @@ public class SearchByMemberHook implements BaseHook {
     lineVersionConfig = config;
     searchKeywordEventClass = config.chat.searchKeywordEventClass;
 
+    // Check the whole registration surface first; do not leave an entry with no result hooks.
+    Class<?> helper = Reflect.findClass(config.chat.searchHeaderHelperClass, appClassLoader);
+    Reflect.findMethodExact(helper, "a");
+    helper.getDeclaredField("a");
+    Reflect.findMethodExact(
+        helper.getDeclaredField(config.chat.searchHeaderControllerField).getType(),
+        config.chat.searchControllerSearchBoxMethod);
+    helper.getDeclaredField(config.chat.searchHeaderEventBusField);
+    Reflect.findMethodExact(
+        config.chat.searchBoxViewClass, appClassLoader, "setEditingLayout", boolean.class);
+    Class<?> presenter = Reflect.findClass(config.chat.searchPresenterClass, appClassLoader);
+    Reflect.findMethodExact(
+        presenter,
+        config.chat.searchPresenterKeywordChangedMethod,
+        Reflect.findClass(config.chat.searchKeywordEventClass, appClassLoader));
+    presenter.getDeclaredField(config.chat.searchPresenterKeywordSubjectField);
+    SearchResultLayout.of(config.chat, appClassLoader);
+    Reflect.findConstructorExact(
+        config.chat.searchResultWrapperClass, appClassLoader, String.class, String.class);
+    Reflect.findMethodExact(
+        config.chat.searchKeywordTypeClass,
+        appClassLoader,
+        config.chat.searchKeywordTypeMethod,
+        String.class);
+
     setupHeaderHook(config, lpparam.classLoader);
     setupSearchBoxHook(config, lpparam.classLoader);
     setupSearchPresenterHook(config, lpparam.classLoader);
@@ -127,6 +152,7 @@ public class SearchByMemberHook implements BaseHook {
               });
     } catch (Throwable t) {
       Vector.log("Tencha: SearchByMember setupHeaderHook error: " + t);
+      throw new IllegalStateException("SearchByMember header registration failed", t);
     }
   }
 
@@ -233,12 +259,16 @@ public class SearchByMemberHook implements BaseHook {
           .intercept(
               chain -> {
                 Object result = chain.proceed();
-                ImageView icon = (ImageView) Reflect.getObjectField(chain.getThisObject(), "d");
+                ImageView icon =
+                    (ImageView)
+                        Reflect.getObjectField(
+                            chain.getThisObject(), config.chat.searchBoxIconField);
                 if (icon != null && MEMBER_ICON_TAG.equals(icon.getTag())) icon.setEnabled(true);
                 return result;
               });
     } catch (Throwable t) {
       Vector.log("Tencha: setupSearchBoxHook error: " + t);
+      throw new IllegalStateException("SearchByMember search box registration failed", t);
     }
   }
 
@@ -257,6 +287,7 @@ public class SearchByMemberHook implements BaseHook {
               });
     } catch (Throwable t) {
       Vector.log("Tencha: setupSearchPresenterHook error: " + t);
+      throw new IllegalStateException("SearchByMember presenter registration failed", t);
     }
   }
 
@@ -279,6 +310,7 @@ public class SearchByMemberHook implements BaseHook {
               });
     } catch (Throwable t) {
       Vector.log("Tencha: SearchByMember setupKeywordTypeHook error: " + t);
+      throw new IllegalStateException("SearchByMember keyword registration failed", t);
     }
   }
 
@@ -295,6 +327,7 @@ public class SearchByMemberHook implements BaseHook {
               });
     } catch (Throwable t) {
       Vector.log("Tencha: setupSearchResultHook error: " + t);
+      throw new IllegalStateException("SearchByMember result registration failed", t);
     }
   }
 
@@ -358,6 +391,7 @@ public class SearchByMemberHook implements BaseHook {
           .intercept(chain -> Boolean.FALSE);
     } catch (Throwable t) {
       Vector.log("Tencha: setupSearchResultWrapperHook error: " + t);
+      throw new IllegalStateException("SearchByMember wrapper registration failed", t);
     }
   }
 
@@ -695,7 +729,22 @@ public class SearchByMemberHook implements BaseHook {
   }
 
   private Object getSearchBoxView(Object controller) {
-    return Reflect.callMethod(controller, lineVersionConfig.chat.searchControllerSearchBoxMethod);
+    Object view =
+        Reflect.callMethod(controller, lineVersionConfig.chat.searchControllerSearchBoxMethod);
+    Class<?> box = Reflect.findClass(lineVersionConfig.chat.searchBoxViewClass, appClassLoader);
+    return findSearchBox(view, box);
+  }
+
+  private static View findSearchBox(Object value, Class<?> box) {
+    if (box.isInstance(value)) return (View) value;
+    if (value instanceof ViewGroup) {
+      ViewGroup parent = (ViewGroup) value;
+      for (int i = 0; i < parent.getChildCount(); i++) {
+        View found = findSearchBox(parent.getChildAt(i), box);
+        if (found != null) return found;
+      }
+    }
+    return null;
   }
 
   private static boolean hasMeaningfulKeyword(String keyword) {

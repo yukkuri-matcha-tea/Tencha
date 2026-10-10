@@ -8,14 +8,24 @@ LINEヤフー株式会社とは無関係です。LINE更新による非互換、
 
 ## ダウンロード
 
-[GitHub Releases](https://github.com/yukkuri-matcha-tea/Tencha/releases/latest)で配布しています。2.0.0の配布物：
+[GitHub Releases](https://github.com/yukkuri-matcha-tea/Tencha/releases/latest)で配布しています。2.0.1の配布物：
 
-- [root向けAPK](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.0.0/Tencha-root-2.0.0.apk)
-- [非root向けセット](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.0.0/Tencha-rootless-kit-2.0.0.zip) — モジュール、LSPatch、作成用スクリプト・説明書
-- [非root向けモジュール単体](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.0.0/Tencha-rootless-module-2.0.0.apk)
-- [SHA-256チェックサム](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.0.0/Tencha-2.0.0-SHA256SUMS.txt)
+- [root向けAPK](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.0.1/Tencha-root-2.0.1.apk)
+- [非root向けセット](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.0.1/Tencha-rootless-kit-2.0.1.zip) — モジュール、LSPatch、作成用スクリプト・説明書
+- [非root向けモジュール単体](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.0.1/Tencha-rootless-module-2.0.1.apk)
+- [SHA-256チェックサム](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.0.1/Tencha-2.0.1-SHA256SUMS.txt)
 
 root向け・非root向けモジュールAPKは同じ内容で、導入方法が異なります。パッチ済みLINE APKは配布しません。
+
+## 2.0.1の変更
+
+- LINE 26.15.1のチャット上部ボタン・メンバー検索・開発者用通知修復・送信取消UI制限の参照先を修正
+- 設定リセット後に古い設定が残る問題と、Hook登録失敗を登録済みとして扱う問題を修正
+- サウンドボードの長音源読み込みをバックグラウンド化し、重複再生時のメモリ使用量・音声処理とのロック競合を軽減。連打制限は追加していません
+- 音源一覧のドラッグ並び替え、「アニメーションを強化」のON/OFF、LINE下タブの横スライドを追加
+- プロフィール閲覧モードの画像取得・編集用ボタン非表示・保存阻止処理を修正
+
+59件の単体テスト、lint（エラー0）、APKビルドとLINEの起動を確認しています。実通話での長音源連打・通知受信・全機能の動作は未確認です。[修正・検証記録](docs/bug-scan-fixes-2026-10-10.md)
 
 ## 2.0.0の通話設定
 
@@ -88,6 +98,8 @@ LSPatchで利用者自身のLINE APKにTenchaを組み込んで使用します�
 - **TTS**：通話中のテキストメッセージを読み上げる。対象ユーザー、出力先、送信者名の読み上げ、最大文字数を設定可能
 
 サウンドボード音声はLINE内のTencha設定から登録します。再生は通話画面のパーティー機能（YouTube・画面シェアを開く場所）の「サウンドボード」から操作します。TTSは通話画面のメニューにある「Tencha 通話調整」から読み上げをONにしてください。
+
+音声一覧の右側にある「≡」を押したまま上下へドラッグすると並び替えできます。指を離すと保存され、通話のサウンドボードもその順番で表示します。画面端では自動スクロールします。音声名を押すと削除確認、下の「音声を追加」で登録できます。
 
 サウンドボードはパーティー画面の中に表示し、YouTube・画面シェアへその場で切り替えられます。切り替え時は横スライドします。Androidでアニメーションを無効にしている場合は即時切り替えです。このパーティー画面への統合はLINE 26.15.0 / 26.15.1のAPKに基づく実装で、他の版は未検証です。
 

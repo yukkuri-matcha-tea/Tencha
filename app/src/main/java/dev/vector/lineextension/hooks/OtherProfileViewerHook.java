@@ -88,11 +88,12 @@ public final class OtherProfileViewerHook implements BaseHook {
     classLoader = lpparam.classLoader;
     if (cfg == null || cfg.profileViewer.profileActivityClass.isEmpty()) return;
 
+    // Never enable the native editor before its remote-write barrier is registered.
+    hookSaveBarrier();
     hookDecorationController();
     hookPopup();
     hookPopupWindowShow();
     hookEditorActions();
-    hookSaveBarrier();
     hookProfileLifecycle();
     hookNativeImageViewer(cfg.profileViewer.profileImageViewerActivityClass, "imageviewer_image");
     hookNativeImageViewer(cfg.profileViewer.coverViewerActivityClass, "cover_image_view");
@@ -313,10 +314,12 @@ public final class OtherProfileViewerHook implements BaseHook {
             });
   }
 
-  private void hookSaveBarrier() {
+  private void hookSaveBarrier() throws NoSuchMethodException {
     Class<?> vmClass = Reflect.findClass(cfg.profileViewer.decoViewModelClass, classLoader);
+    boolean found = false;
     for (Method method : vmClass.getDeclaredMethods()) {
       if (!method.getName().equals(cfg.profileViewer.methodSaveDecorations)) continue;
+      found = true;
       method.setAccessible(true);
       Vector.module
           .hook(method)
@@ -330,6 +333,9 @@ public final class OtherProfileViewerHook implements BaseHook {
                 }
                 return chain.proceed();
               });
+    }
+    if (!found) {
+      throw new NoSuchMethodException(vmClass.getName() + " read-only save barrier");
     }
   }
 
@@ -443,6 +449,7 @@ public final class OtherProfileViewerHook implements BaseHook {
     if (cover != null) cover.setVisibility(View.GONE);
     if (action != null) action.setVisibility(View.GONE);
     hideAllEditingMenus(state);
+    configureSelectionFrame(state);
   }
 
   private void installMenuGuard(State state) {
@@ -451,7 +458,13 @@ public final class OtherProfileViewerHook implements BaseHook {
         () -> {
           if (state.active) hideAllEditingMenus(state);
         };
-    state.preDrawMenuGuard = () -> !state.active || !hideAllEditingMenus(state);
+    state.preDrawMenuGuard =
+        () -> {
+          if (!state.active) return true;
+          // Native selection/layout observers can restore its editing controls on re-entry.
+          configureSelectionFrame(state);
+          return !hideAllEditingMenus(state);
+        };
     ViewTreeObserver observer = state.activity.getWindow().getDecorView().getViewTreeObserver();
     observer.addOnGlobalLayoutListener(state.menuGuard);
     observer.addOnPreDrawListener(state.preDrawMenuGuard);
@@ -576,11 +589,14 @@ public final class OtherProfileViewerHook implements BaseHook {
   private void configureSelectionFrame(State state) {
     if (!state.active) return;
     try {
-      Object frame = Reflect.getObjectField(state.editor, "F");
+      Object frame =
+          Reflect.getObjectField(state.editor, cfg.profileViewer.editorSelectionFrameField);
       if (frame == null) return;
       ImageView delete = (ImageView) Reflect.getObjectField(frame, "b");
       ImageView edit = (ImageView) Reflect.getObjectField(frame, "c");
       delete.setVisibility(View.GONE);
+      delete.setEnabled(false);
+      delete.setOnClickListener(null);
       boolean hasImage = selectedMedia(state) != null || selectedObjectDrawable(state) != null;
       edit.setVisibility(hasImage ? View.VISIBLE : View.GONE);
       edit.setContentDescription(ModuleStrings.PROFILE_IMAGE_VIEW);
@@ -624,6 +640,7 @@ public final class OtherProfileViewerHook implements BaseHook {
   }
 
   private void showSelectedObject(State state) {
+    if (!state.active) return;
     Object media = selectedMedia(state);
     if (media != null) {
       showImageDialog(state, null, media);
@@ -650,7 +667,7 @@ public final class OtherProfileViewerHook implements BaseHook {
         Object value = Reflect.getObjectField(item, "c");
         if ("MEDIA".equals(Reflect.getObjectField(item, "b"))
             && value != null
-            && value.getClass().getName().equals("cn6.y$e")) {
+            && value.getClass().getName().equals(cfg.profileViewer.mediaValueClass)) {
           return value;
         }
       }
@@ -699,7 +716,7 @@ public final class OtherProfileViewerHook implements BaseHook {
         Object loader = Reflect.getObjectField(renderer, "j");
         Object request = Reflect.callMethod(loader, "b", media, null, true, false);
         if (request == null) throw new IllegalStateException("LINE media URL unavailable");
-        Reflect.callMethod(request, "S", zoom);
+        Reflect.callMethod(request, cfg.profileViewer.methodLoadImageIntoView, zoom);
       } else {
         zoom.setImageBitmap(toBitmap(drawable));
       }
@@ -727,6 +744,8 @@ public final class OtherProfileViewerHook implements BaseHook {
       dialog.show();
     } catch (Throwable t) {
       Vector.log("Tencha: decoration image viewer failed: " + t);
+      Toast.makeText(state.activity, ModuleStrings.PROFILE_IMAGE_SAVE_FAILED, Toast.LENGTH_SHORT)
+          .show();
     }
   }
 

@@ -13,7 +13,9 @@
 #include <cstring>
 #include <cstdio>
 #include <mutex>
+#include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace {
@@ -161,8 +163,12 @@ constexpr std::uintptr_t kRecordCallbackOffset = 0x441f1c;
 constexpr int kSoundboardSampleRate = 16000;
 
 std::mutex soundboardMutex;
-std::vector<std::int64_t> soundboardTimeline;
-double soundboardPosition = 0.0;
+struct SoundboardVoice {
+  std::shared_ptr<const std::vector<std::int16_t>> samples;
+  double position = 0.0;
+};
+std::vector<SoundboardVoice> soundboardVoices;
+std::unordered_map<std::string, std::weak_ptr<const std::vector<std::int16_t>>> soundboardCache;
 std::vector<std::int64_t> ttsTimeline;
 double ttsPosition = 0.0;
 std::atomic<bool> physicalMicMuted{false};
@@ -196,7 +202,7 @@ void mixSoundboardIntoRecording(void* recorder) {
   const bool micMuted = physicalMicMuted.load(std::memory_order_acquire);
   if (micMuted) std::memset(pcm, 0, static_cast<std::size_t>(byteCount));
   if (!soundboardMutex.try_lock()) return;
-  if (soundboardTimeline.empty() && ttsTimeline.empty()) {
+  if (soundboardVoices.empty() && ttsTimeline.empty()) {
     soundboardMutex.unlock();
     return;
   }
@@ -215,23 +221,27 @@ void mixSoundboardIntoRecording(void* recorder) {
   const std::size_t sampleCount = static_cast<std::size_t>(byteCount) / sizeof(std::int16_t);
   const double step = static_cast<double>(kSoundboardSampleRate) / sampleRate;
   for (std::size_t outputIndex = 0; outputIndex < sampleCount; ++outputIndex) {
-    const std::size_t sourceIndex = static_cast<std::size_t>(soundboardPosition);
     const std::size_t ttsIndex = static_cast<std::size_t>(ttsPosition);
+    std::int64_t sound = 0;
+    for (auto& voice : soundboardVoices) {
+      const auto sourceIndex = static_cast<std::size_t>(voice.position);
+      if (sourceIndex < voice.samples->size()) sound += (*voice.samples)[sourceIndex];
+      voice.position += step;
+    }
     pcm[outputIndex] = tencha::mixCallSample(
         pcm[outputIndex], micMuted,
-        sourceIndex < soundboardTimeline.size() ? soundboardTimeline[sourceIndex] : 0,
+        sound,
         ttsIndex < ttsTimeline.size() ? ttsTimeline[ttsIndex] : 0);
-    if (!soundboardTimeline.empty()) soundboardPosition += step;
     if (!ttsTimeline.empty()) ttsPosition += step;
   }
   if (ttsPosition >= static_cast<double>(ttsTimeline.size())) {
     ttsTimeline.clear();
     ttsPosition = 0.0;
   }
-  if (soundboardPosition >= static_cast<double>(soundboardTimeline.size())) {
-    soundboardTimeline.clear();
-    soundboardPosition = 0.0;
-  }
+  soundboardVoices.erase(
+      std::remove_if(soundboardVoices.begin(), soundboardVoices.end(), [](const auto& voice) {
+        return voice.position >= static_cast<double>(voice.samples->size());
+      }), soundboardVoices.end());
   soundboardMutex.unlock();
 }
 
@@ -301,29 +311,43 @@ Java_dev_vector_lineextension_hooks_NativeCallBridge_nativeInstallSoundboardMixe
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_dev_vector_lineextension_hooks_NativeCallBridge_nativeEnqueueSoundboard(JNIEnv* env, jclass,
-                                                                              jshortArray pcm) {
+                                                                              jshortArray pcm, jstring key) {
   if (pcm == nullptr) return JNI_FALSE;
   const jsize length = env->GetArrayLength(pcm);
   if (length <= 0) return JNI_FALSE;
-  std::vector<std::int16_t> samples(static_cast<std::size_t>(length));
-  env->GetShortArrayRegion(pcm, 0, length, reinterpret_cast<jshort*>(samples.data()));
-  if (env->ExceptionCheck()) return JNI_FALSE;
-
-  std::lock_guard<std::mutex> guard(soundboardMutex);
-  std::size_t start = static_cast<std::size_t>(std::ceil(soundboardPosition));
-  if (start > kSoundboardSampleRate && start > soundboardTimeline.size() / 2U) {
-    const std::size_t consumed = static_cast<std::size_t>(soundboardPosition);
-    soundboardTimeline.erase(soundboardTimeline.begin(), soundboardTimeline.begin() + consumed);
-    soundboardPosition -= static_cast<double>(consumed);
-    start = static_cast<std::size_t>(std::ceil(soundboardPosition));
+  try {
+    std::string cacheKey;
+    if (key != nullptr) {
+      const char* chars = env->GetStringUTFChars(key, nullptr);
+      if (chars == nullptr) return JNI_FALSE;
+      try { cacheKey.assign(chars); }
+      catch (...) { env->ReleaseStringUTFChars(key, chars); throw; }
+      env->ReleaseStringUTFChars(key, chars);
+    }
+    std::shared_ptr<const std::vector<std::int16_t>> samples;
+    {
+      std::lock_guard<std::mutex> guard(soundboardMutex);
+      auto found = soundboardCache.find(cacheKey);
+      if (found != soundboardCache.end()) samples = found->second.lock();
+    }
+    if (!samples || samples->size() != static_cast<std::size_t>(length)) {
+      auto loaded = std::make_shared<std::vector<std::int16_t>>(static_cast<std::size_t>(length));
+      // No allocation or entire-clip summation under the recorder's lock.
+      env->GetShortArrayRegion(pcm, 0, length, reinterpret_cast<jshort*>(loaded->data()));
+      if (env->ExceptionCheck()) return JNI_FALSE;
+      samples = std::move(loaded);
+    }
+    std::lock_guard<std::mutex> guard(soundboardMutex);
+    for (auto it = soundboardCache.begin(); it != soundboardCache.end(); ) {
+      if (it->second.expired()) it = soundboardCache.erase(it); else ++it;
+    }
+    if (!cacheKey.empty()) soundboardCache[cacheKey] = samples;
+    soundboardVoices.push_back({std::move(samples), 0.0});
+    return JNI_TRUE;
+  } catch (const std::exception& error) {
+    __android_log_print(ANDROID_LOG_ERROR, kTag, "Soundboard enqueue failed: %s", error.what());
+    return JNI_FALSE;
   }
-  if (soundboardTimeline.size() < start + samples.size()) {
-    soundboardTimeline.resize(start + samples.size(), 0);
-  }
-  for (std::size_t i = 0; i < samples.size(); ++i) {
-    soundboardTimeline[start + i] += samples[i];
-  }
-  return JNI_TRUE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -346,8 +370,8 @@ Java_dev_vector_lineextension_hooks_NativeCallBridge_nativeEnqueueTts(JNIEnv* en
 extern "C" JNIEXPORT void JNICALL
 Java_dev_vector_lineextension_hooks_NativeCallBridge_nativeClearSoundboard(JNIEnv*, jclass) {
   std::lock_guard<std::mutex> guard(soundboardMutex);
-  soundboardTimeline.clear();
-  soundboardPosition = 0.0;
+  soundboardVoices.clear();
+  soundboardCache.clear();
 }
 
 extern "C" JNIEXPORT void JNICALL

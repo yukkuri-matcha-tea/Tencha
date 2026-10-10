@@ -14,6 +14,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.lang.ref.SoftReference;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -28,6 +29,8 @@ final class SoundboardStore {
   private static final String KEY_CLIPS = "clips";
   private static final int TARGET_RATE = 16000;
   private static final int MAX_PCM_BYTES = 64 * 1024 * 1024;
+  private static String cachedPcmKey = "";
+  private static SoftReference<short[]> cachedPcm = new SoftReference<>(null);
 
   static final class Clip {
     final String id;
@@ -71,9 +74,11 @@ final class SoundboardStore {
     try {
       writeWav(output, decodeToPcm16(context, uri), TARGET_RATE);
       Clip clip = new Clip(id, displayName(context, uri), output.getAbsolutePath());
-      List<Clip> clips = load(context);
-      clips.add(clip);
-      save(context, clips);
+      synchronized (SoundboardStore.class) {
+        List<Clip> clips = load(context);
+        clips.add(clip);
+        save(context, clips);
+      }
       return clip;
     } catch (Throwable error) {
       output.delete();
@@ -82,7 +87,7 @@ final class SoundboardStore {
     }
   }
 
-  static void remove(Context context, Clip clip) {
+  static synchronized void remove(Context context, Clip clip) {
     List<Clip> clips = load(context);
     clips.removeIf(candidate -> candidate.id.equals(clip.id));
     save(context, clips);
@@ -92,18 +97,48 @@ final class SoundboardStore {
     }
   }
 
+  static synchronized boolean move(Context context, String clipId, String targetId) {
+    List<Clip> clips = load(context);
+    List<Clip> previous = new ArrayList<>(clips);
+    if (!SoundboardOrder.move(clips, clipId, targetId, clip -> clip.id)) return false;
+    if (save(context, clips, true)) return true;
+    // SharedPreferences commit failure can still change its in-memory map; restore the old order.
+    save(context, previous);
+    return false;
+  }
+
+  static synchronized boolean reorder(Context context, List<String> requested) {
+    List<Clip> current = load(context);
+    List<Clip> reordered = SoundboardOrder.merge(current, requested, clip -> clip.id);
+    if (save(context, reordered, true)) return true;
+    save(context, current);
+    return false;
+  }
+
   static long durationMs(Clip clip) {
     long pcmBytes = Math.max(0L, new File(clip.path).length() - 44L);
     return Math.max(250L, (pcmBytes * 1000L) / (TARGET_RATE * 2L));
   }
 
-  static short[] readPcm16(Clip clip) throws Exception {
+  static String pcmKey(Clip clip) {
+    File file = new File(clip.path);
+    return file.getAbsolutePath() + ":" + file.length() + ":" + file.lastModified();
+  }
+
+  static synchronized short[] readPcm16(Clip clip) throws Exception {
     File file = new File(clip.path);
     long pcmBytes = file.length() - 44L;
-    if (pcmBytes <= 0L || pcmBytes > MAX_PCM_BYTES || pcmBytes > Integer.MAX_VALUE) {
+    if (pcmBytes <= 0L
+        || (pcmBytes & 1) != 0L
+        || pcmBytes > MAX_PCM_BYTES
+        || pcmBytes > Integer.MAX_VALUE) {
       throw new IllegalArgumentException("音声データが不正です");
     }
-    byte[] bytes = new byte[(int) pcmBytes];
+    String key = pcmKey(clip);
+    short[] existing = cachedPcm.get();
+    if (key.equals(cachedPcmKey) && existing != null) return existing;
+    short[] pcm = new short[(int) pcmBytes / 2];
+    byte[] bytes = new byte[8192];
     try (FileInputStream input = new FileInputStream(file)) {
       long skipped = 0L;
       while (skipped < 44L) {
@@ -112,18 +147,31 @@ final class SoundboardStore {
         skipped += count;
       }
       int offset = 0;
-      while (offset < bytes.length) {
-        int count = input.read(bytes, offset, bytes.length - offset);
-        if (count < 0) throw new IllegalArgumentException("音声データが途中で終了しました");
-        offset += count;
+      while (offset < pcm.length) {
+        int needed = Math.min(bytes.length, (pcm.length - offset) * 2);
+        int filled = 0;
+        while (filled < needed) {
+          int count = input.read(bytes, filled, needed - filled);
+          if (count < 0) throw new IllegalArgumentException("音声データが途中で終了しました");
+          filled += count;
+        }
+        ByteBuffer.wrap(bytes, 0, needed)
+            .order(ByteOrder.LITTLE_ENDIAN)
+            .asShortBuffer()
+            .get(pcm, offset, needed / 2);
+        offset += needed / 2;
       }
     }
-    short[] pcm = new short[bytes.length / 2];
-    ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(pcm);
+    cachedPcmKey = key;
+    cachedPcm = new SoftReference<>(pcm);
     return pcm;
   }
 
   private static void save(Context context, List<Clip> clips) {
+    save(context, clips, false);
+  }
+
+  private static boolean save(Context context, List<Clip> clips, boolean synchronous) {
     JSONArray array = new JSONArray();
     for (Clip clip : clips) {
       JSONObject item = new JSONObject();
@@ -136,7 +184,10 @@ final class SoundboardStore {
       }
     }
     SharedPreferences preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-    preferences.edit().putString(KEY_CLIPS, array.toString()).apply();
+    SharedPreferences.Editor editor = preferences.edit().putString(KEY_CLIPS, array.toString());
+    if (synchronous) return editor.commit();
+    editor.apply();
+    return true;
   }
 
   private static String displayName(Context context, Uri uri) {

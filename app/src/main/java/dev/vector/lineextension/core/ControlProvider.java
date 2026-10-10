@@ -141,8 +141,7 @@ public final class ControlProvider extends ContentProvider {
       case "settingsSnapshot":
         return settingsSnapshot();
       case "resetSettings":
-        resetSettings();
-        out.putBoolean("ok", true);
+        out.putBoolean("ok", resetSettings());
         return out;
       case "storeExists":
         out.putBoolean("exists", storeFile(arg).isFile());
@@ -318,14 +317,14 @@ public final class ControlProvider extends ContentProvider {
     return out;
   }
 
-  private void resetSettings() {
+  private boolean resetSettings() {
     SharedPreferences.Editor edit = prefs.edit();
     for (String key : prefs.getAll().keySet()) {
       if (key.startsWith(PREFIX_SETTING_BOOL) || key.startsWith(PREFIX_SETTING_STRING)) {
         edit.remove(key);
       }
     }
-    edit.apply();
+    return edit.commit();
   }
 
   private void clearAllSafeModes() {

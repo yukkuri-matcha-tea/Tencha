@@ -5,7 +5,7 @@ param(
 
     [string[]]$SplitApk = @(),
 
-  [string]$TenchaApk = (Join-Path $PSScriptRoot 'Tencha-rootless-module-1.5.16.apk'),
+    [string]$TenchaApk,
 
     [string]$LspatchJar = (Join-Path $PSScriptRoot 'lspatch-v1.1-474-release.jar'),
 
@@ -15,6 +15,14 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ([string]::IsNullOrWhiteSpace($TenchaApk)) {
+    $modules = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'Tencha-rootless-module-*.apk' -File)
+    if ($modules.Count -ne 1) {
+        throw 'Tencha APKを一意に選べません。-TenchaApk でファイルを指定してください。'
+    }
+    $TenchaApk = $modules[0].FullName
+}
 
 function Resolve-RequiredFile([string]$Path, [string]$Label) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {

@@ -111,6 +111,7 @@ public class SettingsStore {
     ensurePointerPath(appContext);
     try {
       JSONObject json = getSettingsJson();
+      config.resetDefaults();
       for (VectorConfig.Item item : config.items) {
         if (!json.has(item.key)) continue;
         Object val = json.get(item.key);
@@ -171,12 +172,19 @@ public class SettingsStore {
     }
   }
 
-  public static void reset() {
+  public static synchronized boolean reset() {
     try {
       writeJson(SETTINGS_FILE, new JSONObject());
-    } catch (Throwable ignored) {
+      if (appContext == null || !ControlClient.resetSettings(appContext)) {
+        throw new IOException("Tencha本体の設定を初期化できません");
+      }
+      runtimeSettings.clear();
+      cachedSettingsJson = new JSONObject();
+      return true;
+    } catch (Throwable error) {
+      android.util.Log.e("Vector", "SettingsStore.reset failed", error);
+      return false;
     }
-    cachedSettingsJson = new JSONObject();
   }
 
   private static JSONObject getSettingsJson() throws Throwable {

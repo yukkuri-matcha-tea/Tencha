@@ -95,6 +95,8 @@ public class Main extends XposedModule {
       Vector.log("Tencha: initializing isolated feature hooks...");
 
       applyHook(new SettingsUIInjector(), lpparam);
+      applyHook(new InteractionMotionHook(), lpparam);
+      applyHook(new MainTabSlideHook(), lpparam);
       applyHook(new SettingsButtonLongPress(), lpparam);
       applyHook(new SafeResourceFix(), lpparam);
       applyHook(new AnnouncementNameFix(), lpparam);

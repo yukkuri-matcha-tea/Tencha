@@ -28,6 +28,7 @@ public class VectorConfig {
     public final String key;
     public final String label;
     public final String description;
+    public final boolean defaultEnabled;
     public boolean enabled;
     public String value = "";
     public final Category category;
@@ -38,6 +39,7 @@ public class VectorConfig {
       this.key = key;
       this.label = label;
       this.description = desc;
+      this.defaultEnabled = def;
       this.enabled = def;
       this.category = cat;
       this.section = sec;
@@ -92,6 +94,7 @@ public class VectorConfig {
   public final Item hideAiIconPermanently        = item("hide_ai_icon_permanently",         OPT_HIDE_AI_ICON_PERMANENTLY_LABEL,         OPT_HIDE_AI_ICON_PERMANENTLY_DESC,         false, Category.CHAT,         SEC_CHAT_DISPLAY);
   public final Item openUrlInDefaultBrowser      = item("open_url_in_default_browser",      OPT_OPEN_URL_IN_DEFAULT_BROWSER_LABEL,      OPT_OPEN_URL_IN_DEFAULT_BROWSER_DESC,      false, Category.CHAT,         SEC_CHAT_DISPLAY);
   public final Item messageWebActions            = item("message_web_actions",              OPT_MESSAGE_WEB_ACTIONS_LABEL,              OPT_MESSAGE_WEB_ACTIONS_DESC,              true,  Category.CHAT,         SEC_CHAT_DISPLAY);
+  public final Item enhanceAnimations = item("enhance_animations", "アニメーションを強化", "スイッチ、通話ボタン、下タブの切り替えを滑らかにします。", true, Category.DISPLAY, "アニメーション");
   public final Item removeAds                    = item("remove_ads",                       OPT_REMOVE_ADS_LABEL,                       OPT_REMOVE_ADS_DESC,                       false, Category.DISPLAY,      SEC_ADS);
   public final Item removeHomeRecommendations    = item("remove_home_recommendations",      OPT_REMOVE_HOME_RECOMMENDATIONS_LABEL,      OPT_REMOVE_HOME_RECOMMENDATIONS_DESC,      false, Category.DISPLAY,      SEC_ADS);
   public final Item removeHomeServices           = item("remove_home_services",             OPT_REMOVE_HOME_SERVICES_LABEL,             OPT_REMOVE_HOME_SERVICES_DESC,             false, Category.DISPLAY,      SEC_ADS);
@@ -129,4 +132,11 @@ public class VectorConfig {
   // @formatter:on
 
   public final Item[] items = _reg.toArray(new Item[0]);
+
+  public void resetDefaults() {
+    for (Item item : items) {
+      item.enabled = item.defaultEnabled;
+      item.value = "";
+    }
+  }
 }

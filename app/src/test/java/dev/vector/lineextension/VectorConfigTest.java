@@ -10,6 +10,29 @@ import org.junit.Test;
 
 public class VectorConfigTest {
   @Test
+  public void resetRestoresEveryRegisteredDefaultAndClearsStringValues() {
+    VectorConfig config = new VectorConfig();
+    for (VectorConfig.Item item : config.items) {
+      item.enabled = !item.defaultEnabled;
+      item.value = "modified";
+    }
+    config.resetDefaults();
+    for (VectorConfig.Item item : config.items) {
+      assertTrue(item.enabled == item.defaultEnabled);
+      assertTrue(item.value.isEmpty());
+    }
+  }
+
+  @Test
+  public void enhancedAnimationsHaveOneRegisteredDisplayToggle() {
+    VectorConfig config = new VectorConfig();
+    assertTrue(config.enhanceAnimations.enabled);
+    assertTrue(config.enhanceAnimations.category == VectorConfig.Category.DISPLAY);
+    assertTrue(Arrays.asList(config.items).contains(config.enhanceAnimations));
+    assertTrue(config.enhanceAnimations.key.equals("enhance_animations"));
+  }
+
+  @Test
   public void retiredCallControlsAreNotRegisteredEvenForStoredLegacyKeys() {
     for (VectorConfig.Item item : new VectorConfig().items) {
       assertFalse("call_mic_meter".equals(item.key));

@@ -154,12 +154,52 @@ public class LineVersionCompatibilityTest {
     assertEquals("z4.w1", c.compose.onGloballyPositionedClass);
     assertEquals("z4.a0", c.compose.layoutCoordinatesClass);
     assertEquals("sp1.x", c.media.galleryViewClass);
+    assertEquals("rt6.g", c.profileViewer.decoControllerClass);
+    assertEquals("rt6.d0", c.profileViewer.decoEditorControllerClass);
+    assertEquals("v", c.profileViewer.methodGetDecorationView);
+    assertEquals("du6.y$e", c.profileViewer.mediaValueClass);
+    assertEquals("D", c.profileViewer.editorSelectionFrameField);
+    assertEquals("R", c.profileViewer.methodLoadImageIntoView);
     assertEquals("s", c.chat.methodGetChatId);
     assertEquals("xe8.f", c.settings.settingsAdapterClass);
     assertEquals("in8.a2", c.unsend.notifiedReadMessageHandlerClass);
     LineVersion.Config old = LineVersion.resolveVersion("26.15.0", name -> false);
     assertEquals("j3.r", old.compose.composerClass);
     assertEquals("sp1.u", old.media.galleryViewClass);
+    assertEquals("F", old.profileViewer.editorSelectionFrameField);
+    assertEquals("S", old.profileViewer.methodLoadImageIntoView);
+  }
+
+  @Test
+  public void line26151RepairsHeaderSearchAndNotificationMappings() {
+    LineVersion.Config c = LineVersion.resolveVersion("26.15.1", name -> false);
+    assertEquals("il1.z0", c.chat.headerController);
+    assertEquals("il1.m0", c.chatHeader.fieldChatConfigType);
+    assertEquals("ry1.v", c.chat.searchHeaderHelperClass);
+    assertEquals("n", c.chat.searchHeaderControllerField);
+    assertEquals("d", c.chat.searchControllerSearchBoxMethod);
+    assertEquals("A", c.chat.searchPresenterKeywordSubjectField);
+    assertEquals("c", c.chat.searchBoxEditTextField);
+    assertEquals("e", c.chat.searchBoxIconField);
+    assertEquals("ta5.u", c.unsend.chatServiceConfigClass);
+    assertEquals("ux.e", c.notificationFix.firebaseAppClass);
+    assertEquals("iz.i", c.notificationFix.lineFcmServiceBaseClass);
+    assertEquals("iz.s0", c.notificationFix.firebaseRemoteMessageClass);
+    assertEquals("dr.a", c.notificationFix.firebaseReceiverEnvelopeClass);
+    assertEquals("iz.n", c.notificationFix.firebaseDispatcherClass);
+    assertEquals("iz.x0", c.notificationFix.firebaseQueueClass);
+    assertEquals("a", c.notificationFix.firebaseQueueGetInstanceMethod);
+    assertEquals("iz.n1", c.notificationFix.firebaseBindDeliveryClass);
+    assertEquals("iz.i1", c.notificationFix.firebaseWakefulStartClass);
+    assertEquals("qt.n", c.notificationFix.firebaseCompletedTaskClass);
+    assertEquals("er.j", c.notificationFix.gmsAvailabilityClass);
+    assertEquals("e", c.notificationFix.gmsAvailabilityMethod);
+    assertEquals("er.k", c.notificationFix.gmsSignatureCheckClass);
+    assertEquals("pr.a", c.notificationFix.fisCertDigestClass);
+    assertEquals("ta0.j", c.notificationFix.legyDisconnectRunnableClass);
+    LineVersion.Config old = LineVersion.resolveVersion("26.13.0", name -> false);
+    assertEquals("ns.e", old.notificationFix.firebaseAppClass);
+    assertEquals("", old.notificationFix.firebaseQueueClass);
   }
 
   @Test
