@@ -77,6 +77,7 @@ public class RemoveHeaderButtons implements BaseHook {
         chain -> {
           Object result = chain.proceed();
           if (Main.options.removeAiFriendsButton.enabled
+              || Main.options.removeAlbumButton.enabled
               || Main.options.removeOpenChatButton.enabled
               || Main.options.removeCalendarButton.enabled) {
             try {
@@ -111,8 +112,8 @@ public class RemoveHeaderButtons implements BaseHook {
     Set<Object> hidden = new HashSet<>();
     if (Main.options.removeAiFriendsButton.enabled) {
       addIfPresent(hidden, aiFriend);
-      addIfPresent(hidden, album);
     }
+    if (Main.options.removeAlbumButton.enabled) addIfPresent(hidden, album);
     if (Main.options.removeOpenChatButton.enabled) addIfPresent(hidden, openChat);
     if (Main.options.removeCalendarButton.enabled) addIfPresent(hidden, calendar);
     return hidden;

@@ -93,6 +93,11 @@ public class Main extends XposedModule {
       boolean developerMode = options.developerMode.enabled;
 
       Vector.log("Tencha: initializing isolated feature hooks...");
+      try {
+        dev.vector.lineextension.core.DevicePerformance.initialize(context);
+      } catch (Throwable performanceFailure) {
+        Vector.log("Tencha: optional performance initialization skipped", performanceFailure);
+      }
 
       applyHook(new SettingsUIInjector(), lpparam);
       applyHook(new InteractionMotionHook(), lpparam);
@@ -102,6 +107,7 @@ public class Main extends XposedModule {
       applyHook(new AnnouncementNameFix(), lpparam);
       applyHook(new MainSurfaceFix(), lpparam);
       applyHook(new CallToneHook(), lpparam);
+      applyHook(new CallMultitaskingHook(), lpparam);
 
       if (options.recordReadHistory.enabled
           || options.preventMarkAsRead.enabled
@@ -117,8 +123,11 @@ public class Main extends XposedModule {
       if (options.preventUnsendMessage.enabled) {
         applyHook(new UnsendProtector(), lpparam);
       }
-      if (options.hideAiIconPermanently.enabled) {
+      if (options.removeSearchBarAgentIButton.enabled
+          || SettingsStore.get("remove_talkroom_agent_i_toggle", false)) {
         applyHook(new RemoveTalkRoomAgentIToggle(), lpparam);
+      }
+      if (options.hideAiIconPermanently.enabled) {
         applyHook(new HideAiIconPermanently(), lpparam);
       }
       if (options.openUrlInDefaultBrowser.enabled) {

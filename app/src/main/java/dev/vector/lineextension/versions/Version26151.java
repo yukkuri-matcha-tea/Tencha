@@ -8,6 +8,13 @@ public final class Version26151 {
 
   public static LineVersion.Config create() {
     LineVersion.Config v = Version26150.create();
+    // The resource voip_msg_not_available_function_for_calling is used by these gates.
+    // p0(Z) and jo1.p.a(u81.a) check ti1.a.c(); ry0.h0.a(Activity) checks ie2.g.c().
+    v.callRestrictions.voicePresenterClass = "en1.q2";
+    v.callRestrictions.videoLauncherClass = "jo1.p";
+    v.callRestrictions.videoRequestClass = "u81.a";
+    v.callRestrictions.cameraGateClass = "ry0.h0";
+    v.callRestrictions.chatCallStateClass = "ti1.c";
     // Compose ABI shifted while the app-level renderer names and resource IDs stayed stable.
     v.compose.composerClass = "j3.q";
     v.plusMenu.plusMenuComposerImplClass = "j3.c1";

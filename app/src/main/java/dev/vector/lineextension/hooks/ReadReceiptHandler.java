@@ -37,6 +37,30 @@ public class ReadReceiptHandler implements BaseHook {
     LineVersion.Config cfg = LineVersion.get();
     ClassLoader cl = lpparam.classLoader;
 
+    if ("26.16.0".equals(LineVersion.getResolvedVersionName())
+        || "26.17.1".equals(LineVersion.getResolvedVersionName())) {
+      // Validate required interception points before reporting successful registration.
+      Reflect.findMethodExact(
+          cfg.thrift.talkServiceClientImplClass,
+          cl,
+          cfg.thrift.v1,
+          int.class,
+          String.class,
+          String.class);
+      Reflect.findMethodExact(
+          cfg.readReceipt.readReceiptManagerClass,
+          cl,
+          cfg.readReceipt.methodSendReadReceipt,
+          long.class,
+          String.class,
+          boolean.class);
+      Reflect.findMethodExact(
+          cfg.readReceipt.readReceiptManagerClass,
+          cl,
+          cfg.readReceipt.methodExecuteReadReceiptAsync,
+          String.class);
+    }
+
     hookOperationForHistory(cfg, cl);
     hookThriftReadReceipt(cfg, cl, config);
     hookReadReceiptManager(cfg, cl, config);
@@ -265,36 +289,39 @@ public class ReadReceiptHandler implements BaseHook {
 
   private void recordReadEvent(
       String chatId, String readerMid, String lastMsgIdStr, long readTime) {
-    if (chatId == null || readerMid == null || lastMsgIdStr == null) return;
+    if (chatId == null || chatId.isEmpty() || readerMid == null || readerMid.isEmpty()) return;
 
     long lastMsgId = parseLong(lastMsgIdStr, -1L);
-    if (lastMsgId < 0) return;
+    if (lastMsgId <= 0) return;
 
     String myMid = LineDBUtils.getMyMid();
     if (myMid == null || readerMid.equals(myMid)) return;
 
-    try {
-      JSONObject history = SettingsStore.loadReadHistory();
-      JSONObject chat = ensureChat(history, chatId);
+    boolean recorded =
+        SettingsStore.updateReadHistory(
+            history -> {
+              JSONObject chat = ensureChat(history, chatId);
+              long prevHwm = getReaderHwm(chat, readerMid);
+              if (lastMsgId <= prevHwm) return false;
 
-      long prevHwm = getReaderHwm(chat, readerMid);
-      if (lastMsgId <= prevHwm) return;
+              // The receipt may point to another member's message. Without a previous
+              // watermark, record the latest eligible own message without backfilling old ones.
+              int limit = prevHwm == 0 ? 1 : MAX_MESSAGES_PER_CHAT;
+              List<LineDBUtils.MessageRecord> records =
+                  LineDBUtils.fetchMyMessagesUpTo(chatId, prevHwm, lastMsgId, myMid, limit);
+              if (records == null) return false;
 
-      String readerName = LineDBUtils.resolveMemberName(readerMid);
-      String timeStr =
-          new SimpleDateFormat(TIME_FMT, Locale.getDefault()).format(new Date(readTime));
-
-      long lowerBound = prevHwm > 0 ? prevHwm : lastMsgId - 1;
-      List<LineDBUtils.MessageRecord> records =
-          LineDBUtils.fetchMyMessagesUpTo(chatId, lowerBound, lastMsgId, myMid);
-
-      ensureMessageEntries(chat, records);
-      markReaderOnMessagesUpTo(chat, readerMid, readerName, timeStr, lastMsgId);
-      setReaderHwm(chat, readerMid, lastMsgId);
-      pruneReadHistory(history);
-      SettingsStore.saveReadHistory(history);
+              String readerName = LineDBUtils.resolveMemberName(readerMid);
+              String timeStr =
+                  new SimpleDateFormat(TIME_FMT, Locale.getDefault()).format(new Date(readTime));
+              ensureMessageEntries(chat, records);
+              markReaderOnMessagesUpTo(chat, readerMid, readerName, timeStr, lastMsgId);
+              setReaderHwm(chat, readerMid, lastMsgId);
+              pruneReadHistory(history);
+              return true;
+            });
+    if (recorded) {
       RuntimeReporter.working("read_block", "既読ユーザーID・時刻の記録をRuntime確認");
-    } catch (Throwable ignored) {
     }
   }
 

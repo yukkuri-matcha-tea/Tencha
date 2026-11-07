@@ -90,11 +90,11 @@ public final class OtherProfileViewerHook implements BaseHook {
 
     // Never enable the native editor before its remote-write barrier is registered.
     hookSaveBarrier();
-    hookDecorationController();
-    hookPopup();
-    hookPopupWindowShow();
     hookEditorActions();
     hookProfileLifecycle();
+    hookPopup();
+    hookPopupWindowShow();
+    hookDecorationController();
     hookNativeImageViewer(cfg.profileViewer.profileImageViewerActivityClass, "imageviewer_image");
     hookNativeImageViewer(cfg.profileViewer.coverViewerActivityClass, "cover_image_view");
   }
@@ -317,8 +317,17 @@ public final class OtherProfileViewerHook implements BaseHook {
   private void hookSaveBarrier() throws NoSuchMethodException {
     Class<?> vmClass = Reflect.findClass(cfg.profileViewer.decoViewModelClass, classLoader);
     boolean found = false;
+    Class<?> saveParam =
+        cfg.profileViewer.saveDecorationsParamClass.isEmpty()
+            ? null
+            : Reflect.findClass(cfg.profileViewer.saveDecorationsParamClass, classLoader);
     for (Method method : vmClass.getDeclaredMethods()) {
-      if (!method.getName().equals(cfg.profileViewer.methodSaveDecorations)) continue;
+      if (!method.getName().equals(cfg.profileViewer.methodSaveDecorations)
+          || method.getReturnType() != void.class
+          || (saveParam != null
+              && (method.getParameterCount() != 1 || method.getParameterTypes()[0] != saveParam))) {
+        continue;
+      }
       found = true;
       method.setAccessible(true);
       Vector.module
@@ -350,7 +359,7 @@ public final class OtherProfileViewerHook implements BaseHook {
               POPUPS.remove(host);
               if (state != null) {
                 removeNonFriendEntryGuard(state);
-                resetObjectMode(state);
+                if (state.active) resetObjectMode(state);
               }
               return chain.proceed();
             });
@@ -384,14 +393,19 @@ public final class OtherProfileViewerHook implements BaseHook {
     if (active == state.active) return;
     state.active = active;
     if (active) {
-      installMenuGuard(state);
-      Reflect.callMethod(state.baseViewModel, cfg.profileViewer.methodSetEditMode, true);
-      hideEditingActions(state);
-      state
-          .activity
-          .getWindow()
-          .getDecorView()
-          .postDelayed(() -> configureReadOnlyEditor(state), 100);
+      try {
+        installMenuGuard(state);
+        Reflect.callMethod(state.baseViewModel, cfg.profileViewer.methodSetEditMode, true);
+        hideEditingActions(state);
+        state
+            .activity
+            .getWindow()
+            .getDecorView()
+            .postDelayed(() -> configureReadOnlyEditor(state), 100);
+      } catch (Throwable error) {
+        Vector.log("Tencha: object mode open failed: " + error);
+        resetObjectMode(state);
+      }
     } else {
       resetObjectMode(state);
     }
@@ -592,8 +606,10 @@ public final class OtherProfileViewerHook implements BaseHook {
       Object frame =
           Reflect.getObjectField(state.editor, cfg.profileViewer.editorSelectionFrameField);
       if (frame == null) return;
-      ImageView delete = (ImageView) Reflect.getObjectField(frame, "b");
-      ImageView edit = (ImageView) Reflect.getObjectField(frame, "c");
+      ImageView delete =
+          (ImageView) Reflect.getObjectField(frame, cfg.profileViewer.editorDeleteButtonField);
+      ImageView edit =
+          (ImageView) Reflect.getObjectField(frame, cfg.profileViewer.editorEditButtonField);
       delete.setVisibility(View.GONE);
       delete.setEnabled(false);
       delete.setOnClickListener(null);
@@ -628,7 +644,8 @@ public final class OtherProfileViewerHook implements BaseHook {
                   (ignored, which) -> {
                     Object object = selectable.get(which);
                     String id = (String) Reflect.getObjectField(object, "a");
-                    Reflect.callMethod(state.decoViewModel, "D7", id);
+                    Reflect.callMethod(
+                        state.decoViewModel, cfg.profileViewer.methodSelectDecoration, id);
                   })
               .setNegativeButton(ModuleStrings.COMMON_CLOSE, null)
               .create();
@@ -764,6 +781,7 @@ public final class OtherProfileViewerHook implements BaseHook {
       int download = id(activity, "drawable", "download_ic_download");
       if (download == 0) download = id(activity, "drawable", "navi_top_overlay_download");
       if (download == 0) download = id(activity, "drawable", "ic_download");
+      if (download == 0) download = id(activity, "drawable", "album_toolbar_icon_download_overlay");
       if (icon != null && download != 0) icon.setImageResource(download);
     } catch (Throwable t) {
       Vector.log("Tencha: profile image save button failed: " + t);
@@ -797,11 +815,19 @@ public final class OtherProfileViewerHook implements BaseHook {
       if (Build.VERSION.SDK_INT >= 29) {
         ContentValues ready = new ContentValues();
         ready.put(MediaStore.Images.Media.IS_PENDING, 0);
-        context.getContentResolver().update(uri, ready, null, null);
+        if (context.getContentResolver().update(uri, ready, null, null) == 0) {
+          throw new IllegalStateException("MediaStore image was not published");
+        }
       }
       Toast.makeText(context, ModuleStrings.PROFILE_IMAGE_SAVED, Toast.LENGTH_SHORT).show();
     } catch (Throwable t) {
-      if (uri != null) context.getContentResolver().delete(uri, null, null);
+      if (uri != null) {
+        try {
+          context.getContentResolver().delete(uri, null, null);
+        } catch (RuntimeException cleanupError) {
+          t.addSuppressed(cleanupError);
+        }
+      }
       Vector.log("Tencha: image save failed: " + t);
       Toast.makeText(context, ModuleStrings.PROFILE_IMAGE_SAVE_FAILED, Toast.LENGTH_SHORT).show();
     }

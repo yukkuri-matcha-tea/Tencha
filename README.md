@@ -8,14 +8,24 @@ LINEヤフー株式会社とは無関係です。LINE更新による非互換、
 
 ## ダウンロード
 
-[GitHub Releases](https://github.com/yukkuri-matcha-tea/Tencha/releases/latest)で配布しています。2.0.1の配布物：
+[GitHub Releases](https://github.com/yukkuri-matcha-tea/Tencha/releases/latest)で配布しています。
 
-- [root向けAPK](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.0.1/Tencha-root-2.0.1.apk)
-- [非root向けセット](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.0.1/Tencha-rootless-kit-2.0.1.zip) — モジュール、LSPatch、作成用スクリプト・説明書
-- [非root向けモジュール単体](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.0.1/Tencha-rootless-module-2.0.1.apk)
-- [SHA-256チェックサム](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.0.1/Tencha-2.0.1-SHA256SUMS.txt)
+- [root向けAPK](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.1.0/Tencha-root-2.1.0.apk)
+- [非root向けセット](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.1.0/Tencha-rootless-kit-2.1.0.zip)。モジュール、LSPatch、作成用スクリプト、説明書を同梱。
+- [非root向けモジュール単体](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.1.0/Tencha-rootless-module-2.1.0.apk)
+- [SHA-256チェックサム](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.1.0/Tencha-2.1.0-SHA256SUMS.txt)
 
 root向け・非root向けモジュールAPKは同じ内容で、導入方法が異なります。パッチ済みLINE APKは配布しません。
+
+## 2.1.0の変更
+
+- LINE 26.16.0と26.17.1の設定、チャット、通話、プロフィールなどの参照先を更新。
+- トーク一覧の既読回避と、メッセージ長押しのGoogle検索・翻訳を修正。既読履歴の取りこぼしとリアクション通知の遷移先も修正。
+- 通話中にカメラ、動画選択、ボイスメッセージ録音の画面を開く設定を追加。録音・カメラの同時使用は端末に依存します。
+- サウンドボードに音声を追加したときの件数表示と、TTSエンジンが応答しないときの読み上げ待ちを修正。
+- プロフィール画像の保存アイコンを更新し、保存失敗時の処理を修正。
+
+LINE 26.17.1のAPK参照212件と単体テスト92件が通過しました。実機で確認した操作と未確認の項目は[解析・検証記録](docs/line-26.17.1-compatibility.md)に記載しています。
 
 ## 2.0.1の変更
 
@@ -37,9 +47,11 @@ LINE内の **Tencha → モジュール設定 → 通話** に、サウンドボ
 - 「LINE標準の呼出音」は、相手が設定した曲を自分の端末でLINE純正の呼出音へ差し替えます。以前の「相手の呼び出し音を無効化」と設定キーは同じです。
 - 「呼出音」内の「音声ファイル」で曲を選び、「呼出音を変更」をONにすると、相手を呼び出している間に自分側で聞く音を変更できます。有効なファイルがある場合はLINE標準指定より優先します。相手の設定や相手側で聞こえる音は変更しません。着信音とは別に保存し、サウンドボードへは登録しません。
 
-着信音と呼び出し音の変更は初期OFFです。グループID取得・音源差し替えの実装対象は、実APKで調査したLINE 26.15.0 / 26.15.1です。[実装・検証記録](docs/call-settings-2.0.0.md)
+着信音と呼び出し音の変更は初期OFFです。グループID取得・音源差し替えの対応表はLINE 26.15.0 / 26.15.1 / 26.16.0 / 26.17.1にあります。[実装・検証記録](docs/call-settings-2.0.0.md)。
 
 ## 対応環境
+
+2.1.0ではLINE **26.17.1（261710173）** と **26.16.0（261600106）** の対応表を追加しています。[26.17.1の解析・検証記録](docs/line-26.17.1-compatibility.md)、[26.16.0の解析・検証記録](docs/line-26.16.0-compatibility.md)。
 
 - Android 8.0以降、arm64-v8a
 - 対象アプリ：LINE（`jp.naver.line.android`）
@@ -96,14 +108,15 @@ LSPatchで利用者自身のLINE APKにTenchaを組み込んで使用します�
 
 - **サウンドボード**：登録した音声ファイルを通話へ流し、自分でも再生音を聞く
 - **TTS**：通話中のテキストメッセージを読み上げる。対象ユーザー、出力先、送信者名の読み上げ、最大文字数を設定可能
+- **通話中の操作制限を解除**。通話中でもカメラ、動画選択、ボイスメッセージ録音の画面を開く
 
 サウンドボード音声はLINE内のTencha設定から登録します。再生は通話画面のパーティー機能（YouTube・画面シェアを開く場所）の「サウンドボード」から操作します。TTSは通話画面のメニューにある「Tencha 通話調整」から読み上げをONにしてください。
 
 音声一覧の右側にある「≡」を押したまま上下へドラッグすると並び替えできます。指を離すと保存され、通話のサウンドボードもその順番で表示します。画面端では自動スクロールします。音声名を押すと削除確認、下の「音声を追加」で登録できます。
 
-サウンドボードはパーティー画面の中に表示し、YouTube・画面シェアへその場で切り替えられます。切り替え時は横スライドします。Androidでアニメーションを無効にしている場合は即時切り替えです。このパーティー画面への統合はLINE 26.15.0 / 26.15.1のAPKに基づく実装で、他の版は未検証です。
+サウンドボードはパーティー画面の中に表示し、YouTube・画面シェアへその場で切り替えられます。切り替え時は横スライドします。Androidでアニメーションを無効にしている場合は即時切り替えです。パーティー画面の参照はLINE 26.15.0 / 26.15.1 / 26.16.0 / 26.17.1に対応しています。
 
-**ミュート中も追加音声を送信**：LINE内のTencha設定 → 通話 → 音声送信でON/OFFできます。初期OFFです。ONではミュート時にマイク音声だけを0にし、サウンドボード・TTSは送信します。OFFではLINE本来のミュート動作になります。変更後はLINEの再起動が必要です。現在の実装対象はLINE 26.14.0 / 26.15.0 / 26.15.1です。
+**ミュート中も追加音声を送信**：LINE内のTencha設定 → 通話 → 音声送信でON/OFFできます。初期OFFです。ONではミュート時にマイク音声だけを0にし、サウンドボード・TTSは送信します。OFFではLINE本来のミュート動作になります。変更後はLINEの再起動が必要です。対応表はLINE 26.14.0 / 26.15.0 / 26.15.1 / 26.16.0 / 26.17.1にあります。
 
 注意：自分側でミュート表示でも、相手からはミュートしていないように見える場合があります。追加音声は相手に届くため、ミュート表示を「すべての音声を送信しない」という意味で扱わないでください。相手側の表示は実機未確認です。
 

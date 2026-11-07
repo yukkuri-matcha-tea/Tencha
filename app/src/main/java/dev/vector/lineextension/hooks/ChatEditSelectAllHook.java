@@ -30,6 +30,14 @@ public class ChatEditSelectAllHook implements BaseHook {
     cfg = version.chatEditSelectAll;
     if (cfg.selectionProviderClass.isEmpty()) return;
     providerClass = Reflect.findClass(cfg.selectionProviderClass, lpparam.classLoader);
+    Class<?> stateClass = Reflect.findClass(cfg.selectionStateClass, lpparam.classLoader);
+    Class<?> itemClass =
+        Reflect.findMethodExact(providerClass, cfg.methodGetItem, int.class).getReturnType();
+    Reflect.findMethodExact(providerClass, cfg.methodGetSelectionState);
+    Reflect.findMethodExact(providerClass, cfg.methodGetCount);
+    Reflect.findMethodExact(stateClass, cfg.methodGetSelectedIds);
+    Reflect.findMethodExact(stateClass, cfg.methodToggleItem, itemClass);
+    Reflect.findMethodExact(stateClass, cfg.methodIsItemSelected, itemClass);
 
     Vector.module
         .hook(
@@ -60,9 +68,6 @@ public class ChatEditSelectAllHook implements BaseHook {
       TextView toggleBtn = inflated.findViewById(toggleBtnId);
       if (toggleBtn == null) return;
 
-      toggleBtn.setVisibility(View.VISIBLE);
-      toggleBtn.setText(selectAllLabel(context));
-      toggleBtn.setEnabled(true);
       toggleBtn
           .getViewTreeObserver()
           .addOnGlobalLayoutListener(() -> onToggleLayout(toggleBtn, res, context));
@@ -79,17 +84,14 @@ public class ChatEditSelectAllHook implements BaseHook {
       if (execBtnId != 0 && parent != null) {
         TextView execBtn = parent.findViewById(execBtnId);
         if (execBtn != null && execBtn.getText().toString().contains(deleteLabel(context))) {
+          toggleBtn.setVisibility(View.VISIBLE);
+          toggleBtn.setEnabled(true);
           updateButtonText(toggleBtn);
           toggleBtn.setOnClickListener(v -> handleSelectAll(toggleBtn));
         }
       }
     } catch (Exception ignored) {
     }
-
-    if (toggleBtn.getVisibility() != View.VISIBLE) {
-      toggleBtn.setVisibility(View.VISIBLE);
-    }
-    toggleBtn.setEnabled(true);
   }
 
   private void handleSelectAll(TextView toggleBtn) {

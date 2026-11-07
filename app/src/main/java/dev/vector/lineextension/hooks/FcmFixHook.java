@@ -592,8 +592,7 @@ public class FcmFixHook implements BaseHook {
           .hook(Reflect.findMethodExact(fcmServiceClass, fixCfg.lineFcmTokenMethod, String.class))
           .intercept(
               chain -> {
-                if (isEnabled(config))
-                  logVerbose("LINE received Firebase token refresh: " + chain.getArg(0));
+                if (isEnabled(config)) logVerbose("LINE received Firebase token refresh");
                 return chain.proceed();
               });
     } catch (Throwable failure) {

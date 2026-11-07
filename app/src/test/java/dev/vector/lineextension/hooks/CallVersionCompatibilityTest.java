@@ -10,6 +10,10 @@ public class CallVersionCompatibilityTest {
   public void callApiOnlyAcceptsVerified2615Versions() {
     assertTrue(NativeCallBridge.uses2615CallApi("26.15.0"));
     assertTrue(NativeCallBridge.uses2615CallApi("26.15.1"));
+    assertTrue(NativeCallBridge.uses2615CallApi("26.16.0"));
+    assertFalse(NativeCallBridge.uses2615CallApi("26.17.0"));
+    assertTrue(NativeCallBridge.uses2615CallApi("26.17.1"));
+    assertFalse(NativeCallBridge.uses2615CallApi("26.17.2"));
     assertFalse(NativeCallBridge.uses2615CallApi("26.14.0"));
     assertFalse(NativeCallBridge.uses2615CallApi("26.15.2"));
     assertFalse(NativeCallBridge.uses2615CallApi(null));

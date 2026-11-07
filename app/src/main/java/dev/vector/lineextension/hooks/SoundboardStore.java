@@ -10,15 +10,19 @@ import android.media.MediaFormat;
 import android.net.Uri;
 import android.provider.OpenableColumns;
 import dev.vector.lineextension.Vector;
+import dev.vector.lineextension.core.ByteLruCache;
+import dev.vector.lineextension.core.DevicePerformance;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.lang.ref.SoftReference;
+import java.lang.ref.WeakReference;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -29,8 +33,15 @@ final class SoundboardStore {
   private static final String KEY_CLIPS = "clips";
   private static final int TARGET_RATE = 16000;
   private static final int MAX_PCM_BYTES = 64 * 1024 * 1024;
-  private static String cachedPcmKey = "";
-  private static SoftReference<short[]> cachedPcm = new SoftReference<>(null);
+  private static final ByteLruCache<String, short[]> pcmCache =
+      new ByteLruCache<>(DevicePerformance.profile().pcmCacheBytes(), pcm -> (long) pcm.length * 2);
+  // Repeated taps of a long, currently playing clip share its buffer even above cache budget.
+  // Weak references do not retain completed playbacks or impose a tap/clip-length limit.
+  private static final Map<String, WeakReference<short[]>> activePcm = new HashMap<>();
+
+  static {
+    DevicePerformance.addCacheTrimmer(pcmCache::clear);
+  }
 
   static final class Clip {
     final String id;
@@ -135,8 +146,12 @@ final class SoundboardStore {
       throw new IllegalArgumentException("音声データが不正です");
     }
     String key = pcmKey(clip);
-    short[] existing = cachedPcm.get();
-    if (key.equals(cachedPcmKey) && existing != null) return existing;
+    short[] existing = pcmCache.get(key);
+    if (existing == null && activePcm.containsKey(key)) existing = activePcm.get(key).get();
+    if (existing != null) {
+      pcmCache.put(key, existing);
+      return existing;
+    }
     short[] pcm = new short[(int) pcmBytes / 2];
     byte[] bytes = new byte[8192];
     try (FileInputStream input = new FileInputStream(file)) {
@@ -162,8 +177,9 @@ final class SoundboardStore {
         offset += needed / 2;
       }
     }
-    cachedPcmKey = key;
-    cachedPcm = new SoftReference<>(pcm);
+    activePcm.entrySet().removeIf(entry -> entry.getValue().get() == null);
+    activePcm.put(key, new WeakReference<>(pcm));
+    pcmCache.put(key, pcm);
     return pcm;
   }
 

@@ -19,6 +19,8 @@ import dev.vector.lineextension.Main;
 import dev.vector.lineextension.Reflect;
 import dev.vector.lineextension.Vector;
 import dev.vector.lineextension.VectorConfig;
+import dev.vector.lineextension.core.ByteLruCache;
+import dev.vector.lineextension.core.DevicePerformance;
 import dev.vector.lineextension.utils.LineDBUtils;
 import dev.vector.lineextension.utils.ModuleStrings;
 import io.github.libxposed.api.XposedInterface;
@@ -30,6 +32,8 @@ import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicLong;
 import org.json.JSONObject;
 
 public class ReactionNotification implements BaseHook {
@@ -40,6 +44,16 @@ public class ReactionNotification implements BaseHook {
   private static final String PKG_LINE = "jp.naver.line.android";
 
   private static volatile String currentChatMid = null;
+  private static final ByteLruCache<String, Bitmap> icons =
+      new ByteLruCache<>(
+          Math.max(1, DevicePerformance.profile().pcmCacheBytes() / 4),
+          bitmap -> bitmap.getAllocationByteCount());
+  private static final ByteLruCache<Integer, Long> latest = new ByteLruCache<>(512, ticket -> 1);
+  private static final AtomicLong sequence = new AtomicLong();
+
+  static {
+    DevicePerformance.addCacheTrimmer(icons::clear);
+  }
 
   @Override
   public void hook(VectorConfig config, LoadParam lpparam) throws Throwable {
@@ -57,15 +71,7 @@ public class ReactionNotification implements BaseHook {
             if (isChat) {
               try {
                 android.app.Activity activity = (android.app.Activity) chain.getThisObject();
-                String chatId = activity.getIntent().getStringExtra("chatId");
-                if (chatId == null) chatId = activity.getIntent().getStringExtra("chat_id");
-
-                if (chatId == null) {
-                  Object request = Reflect.getObjectField(activity, cfg.chat.chatIdField);
-                  if (request != null) {
-                    chatId = (String) Reflect.callMethod(request, cfg.chat.methodGetChatId);
-                  }
-                }
+                String chatId = ChatHistoryRequest.resolveChatId(activity, cfg);
                 currentChatMid = chatId;
                 clearChatNotifications(activity, chatId);
               } catch (Throwable ignored) {
@@ -143,24 +149,57 @@ public class ReactionNotification implements BaseHook {
     Context context = Vector.currentApplication();
     if (context == null) return;
 
-    Bitmap reactionIcon = resolveReactionIcon(context, curr);
-    if (reactionIcon == null) {
+    // Capture immutable metadata now; never retain Xposed's Chain on another thread.
+    long timestamp = Reflect.getLongField(op, cfg.unsend.operationCreatedTimeField);
+    int notifId = NOTIFICATION_BASE_ID + (chatMid + messageId + reactorMid).hashCode();
+    long ticket = sequence.incrementAndGet();
+    latest.put(notifId, ticket);
+    Runnable work =
+        () -> {
+          try {
+            deliver(
+                context, curr, chatMid, messageId, reactorMid, notifId, timestamp, ticket, true);
+          } catch (Exception error) {
+            Vector.log("Tencha: reaction notification work failed", error);
+          }
+        };
+    try {
+      DevicePerformance.ioExecutor().execute(work);
+    } catch (RejectedExecutionException busy) {
+      // Keep notification delivery under a burst without running network/SQL on LINE's thread.
+      deliver(context, curr, chatMid, messageId, reactorMid, notifId, timestamp, ticket, false);
+    }
+  }
+
+  private void deliver(
+      Context context,
+      JSONObject curr,
+      String chatMid,
+      String messageId,
+      String reactorMid,
+      int notifId,
+      long timestamp,
+      long ticket,
+      boolean assets) {
+    if (!Main.options.reactionNotification.enabled
+        || chatMid.equals(currentChatMid)
+        || !Long.valueOf(ticket).equals(latest.get(notifId))) return;
+
+    Bitmap reactionIcon = assets ? resolveReactionIcon(context, curr) : null;
+    if (assets && reactionIcon == null) {
       reactionIcon = loadBitmapFromResource(context, "chat_ui_ic_reaction_fallback");
     }
 
-    String reactorName = LineDBUtils.resolveMemberName(reactorMid);
+    String reactorName = assets ? LineDBUtils.resolveMemberName(reactorMid) : "相手";
     if (reactorName == null) reactorName = reactorMid;
 
-    String messageSnippet = LineDBUtils.resolveMessageContent(messageId);
+    String messageSnippet = assets ? LineDBUtils.resolveMessageContent(messageId) : null;
     if (messageSnippet == null || messageSnippet.isEmpty()) {
       messageSnippet = ModuleStrings.READ_HISTORY_UNKNOWN_MSG;
     }
 
-    long timestamp = Reflect.getLongField(op, cfg.unsend.operationCreatedTimeField);
-    int notifId = NOTIFICATION_BASE_ID + (chatMid + messageId + reactorMid).hashCode();
-
     String title = String.format(ModuleStrings.REACTION_NOTIF_TITLE, reactorName);
-
+    if (chatMid.equals(currentChatMid) || !Long.valueOf(ticket).equals(latest.get(notifId))) return;
     issueNotification(context, title, messageSnippet, chatMid, reactionIcon, notifId, timestamp);
   }
 
@@ -218,8 +257,13 @@ public class ReactionNotification implements BaseHook {
     for (String path : paths) {
       File f = new File(path);
       if (f.exists()) {
+        Bitmap cached = icons.get(path);
+        if (cached != null) return cached;
         Bitmap b = BitmapFactory.decodeFile(path);
-        if (b != null) return b;
+        if (b != null) {
+          icons.put(path, b);
+          return b;
+        }
       }
     }
 
@@ -253,8 +297,11 @@ public class ReactionNotification implements BaseHook {
     }
 
     for (String urlStr : urls) {
+      Bitmap cached = icons.get(urlStr);
+      if (cached != null) return cached;
+      HttpURLConnection conn = null;
       try {
-        HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
+        conn = (HttpURLConnection) new URL(urlStr).openConnection();
         conn.setConnectTimeout(3000);
         conn.setReadTimeout(3000);
         conn.setRequestProperty("User-Agent", ua);
@@ -262,10 +309,15 @@ public class ReactionNotification implements BaseHook {
         if (conn.getResponseCode() == 200) {
           try (InputStream is = new BufferedInputStream(conn.getInputStream())) {
             Bitmap b = BitmapFactory.decodeStream(is);
-            if (b != null) return b;
+            if (b != null) {
+              icons.put(urlStr, b);
+              return b;
+            }
           }
         }
       } catch (Exception ignored) {
+      } finally {
+        if (conn != null) conn.disconnect();
       }
     }
     return null;
@@ -273,10 +325,16 @@ public class ReactionNotification implements BaseHook {
 
   private Bitmap loadBitmapFromResource(Context context, String resName) {
     if (resName == null) return null;
+    Bitmap cached = icons.get("res:" + resName);
+    if (cached != null) return cached;
     try {
       Context lineCtx = context.createPackageContext(PKG_LINE, Context.CONTEXT_RESTRICTED);
       int resId = lineCtx.getResources().getIdentifier(resName, "drawable", PKG_LINE);
-      if (resId != 0) return BitmapFactory.decodeResource(lineCtx.getResources(), resId);
+      if (resId != 0) {
+        Bitmap result = BitmapFactory.decodeResource(lineCtx.getResources(), resId);
+        if (result != null) icons.put("res:" + resName, result);
+        return result;
+      }
     } catch (Exception ignored) {
     }
     return null;
@@ -327,8 +385,8 @@ public class ReactionNotification implements BaseHook {
 
       intent.setClassName(
           PKG_LINE, LineVersion.get().notification.chatHistoryActivityLaunchActivityClass);
-      intent.putExtra("chatHistoryRequest", (Parcelable) request);
-    } catch (Exception e) {
+      intent.putExtra(ChatHistoryRequest.EXTRA, (Parcelable) request);
+    } catch (Exception | LinkageError e) {
       intent.setClassName(PKG_LINE, LineVersion.get().main.mainActivity);
       intent.putExtra("chatId", chatMid);
     }
@@ -336,7 +394,10 @@ public class ReactionNotification implements BaseHook {
 
     PendingIntent pi =
         PendingIntent.getActivity(
-            context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            context,
+            notifId,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
     Notification.Builder builder =
         (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)

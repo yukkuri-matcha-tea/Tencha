@@ -26,18 +26,18 @@ public final class InteractionMotionHook implements BaseHook {
               Object result = chain.proceed();
               View view = (View) chain.getThisObject();
               try {
+                // Avoid settings lookups and animation-state work for every non-call View.
+                if (!isCallButton(view)) return result;
                 if (!animationsEnabled()) {
                   CallButtonMotion.reset(view);
                   return result;
                 }
-                if (isCallButton(view)) {
-                  if (ready(view) && isMicOrSpeaker(view)) {
-                    CallButtonMotion.setPressed(view, (Boolean) chain.getArg(0));
-                  } else if (ready(view)) {
-                    press(view, (Boolean) chain.getArg(0));
-                  } else {
-                    CallButtonMotion.reset(view);
-                  }
+                if (ready(view) && isMicOrSpeaker(view)) {
+                  CallButtonMotion.setPressed(view, (Boolean) chain.getArg(0));
+                } else if (ready(view)) {
+                  press(view, (Boolean) chain.getArg(0));
+                } else {
+                  CallButtonMotion.reset(view);
                 }
               } catch (Throwable error) {
                 Vector.log("Tencha: button motion skipped", error);

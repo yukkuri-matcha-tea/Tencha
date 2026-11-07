@@ -14,6 +14,17 @@ public class HideAiIconPermanently implements BaseHook {
   @Override
   public void hook(VectorConfig config, LoadParam lpparam) throws Throwable {
     LineVersion.Config cfg = LineVersion.get();
+    if (!cfg.aiIcon.rendererMethod.isEmpty()) {
+      Vector.hookAll(
+          Reflect.findClass(cfg.agentIInChat.toggleComposableClass, lpparam.classLoader),
+          cfg.aiIcon.rendererMethod,
+          chain -> {
+            if (!Main.options.hideAiIconPermanently.enabled) return chain.proceed();
+            RuntimeReporter.working("agenti_hider", "トークルームのAgent i描画を非表示");
+            return null;
+          });
+      return;
+    }
     if (cfg.aiIcon.repoClass.isEmpty()) return;
 
     Method target =

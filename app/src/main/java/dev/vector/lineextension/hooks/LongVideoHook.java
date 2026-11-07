@@ -8,6 +8,7 @@ import dev.vector.lineextension.Vector;
 import dev.vector.lineextension.VectorConfig;
 import dev.vector.lineextension.core.RuntimeReporter;
 import io.github.libxposed.api.XposedInterface;
+import java.util.HashMap;
 import java.util.Map;
 
 public class LongVideoHook implements BaseHook {
@@ -24,7 +25,9 @@ public class LongVideoHook implements BaseHook {
     hookGalleryController(lpparam.classLoader, v);
     hookProfileTrimmer(lpparam.classLoader, v);
     hookSmartDurationBypass(lpparam.classLoader, v);
-    hookDroppedMediaPreprocessor(lpparam.classLoader, v);
+    if (!v.media.keepNonDurationValidation) {
+      hookDroppedMediaPreprocessor(lpparam.classLoader, v);
+    }
     hookPickerSelectionValidator(lpparam.classLoader, v);
   }
 
@@ -32,6 +35,32 @@ public class LongVideoHook implements BaseHook {
     if (v.media.videoDurationCheckClass.isEmpty()) return;
     try {
       Class<?> checkClass = Reflect.findClass(v.media.videoDurationCheckClass, cl);
+      if (v.media.keepNonDurationValidation) {
+        // The validator also checks file size, file validity and free space. Cap the
+        // length only for this call so the real metadata stays available elsewhere.
+        Vector.module
+            .hook(
+                Reflect.findMethodExact(
+                    checkClass,
+                    v.media.videoDurationCheckMethod,
+                    Uri.class,
+                    Map.class,
+                    boolean.class))
+            .intercept(
+                chain -> {
+                  Map<?, ?> metadata = (Map<?, ?>) chain.getArg(1);
+                  Object duration = metadata == null ? null : metadata.get("length");
+                  if (!(duration instanceof Long) || (Long) duration <= 301000) {
+                    return chain.proceed();
+                  }
+                  Map<Object, Object> validationMetadata = new HashMap<>(metadata);
+                  validationMetadata.put("length", 301000L);
+                  RuntimeReporter.working("long_video", "動画時間チェックの緩和をRuntime確認");
+                  return chain.proceed(
+                      new Object[] {chain.getArg(0), validationMetadata, chain.getArg(2)});
+                });
+        return;
+      }
       Class<?> resultClass = Reflect.findClass(v.media.videoDurationSuccessClass, cl);
       final Object success =
           Reflect.getStaticObjectField(resultClass, v.media.fieldVideoDurationSuccess);
@@ -137,6 +166,19 @@ public class LongVideoHook implements BaseHook {
 
   private boolean shouldSpoof(LineVersion.Config v) {
     StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
+    if (v.media.keepNonDurationValidation) {
+      for (StackTraceElement element : stackTrace) {
+        String owner = element.getClassName();
+        String method = element.getMethodName();
+        if ((owner.equals(v.media.videoDurationCheckClass)
+                && method.equals(v.media.videoDurationCheckMethod))
+            || (owner.equals(v.media.droppedMediaPreprocessorClass)
+                && method.equals("invokeSuspend"))) {
+          return true;
+        }
+      }
+      return false;
+    }
     for (StackTraceElement element : stackTrace) {
       String className = element.getClassName();
 

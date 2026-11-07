@@ -15,15 +15,15 @@ import dev.vector.lineextension.VectorConfig;
 import dev.vector.lineextension.core.ReadBlockStore;
 import dev.vector.lineextension.utils.LineDBUtils;
 import dev.vector.lineextension.utils.ModuleStrings;
-import java.lang.reflect.Proxy;
+import java.lang.ref.WeakReference;
+import java.lang.reflect.Method;
+import java.util.WeakHashMap;
 
 public class HeaderButtonInjector implements BaseHook {
 
   private static final ThreadLocal<Boolean> sCreating = new ThreadLocal<>();
-  private static final java.util.WeakHashMap<Object, Object> sHelperToControllerMap =
-      new java.util.WeakHashMap<>();
-  private Class<?> headerInterfaceAClass;
-  private ClassLoader classLoader;
+  private static final WeakHashMap<Object, WeakReference<Object>> sHelperToControllerMap =
+      new WeakHashMap<>();
 
   @Override
   public void hook(VectorConfig options, LoadParam lpparam) throws Throwable {
@@ -36,8 +36,6 @@ public class HeaderButtonInjector implements BaseHook {
       Class<?> headerHelperClass = Reflect.findClass(config.chat.headerHelper, lpparam.classLoader);
       Class<?> headerButtonTypeEnum =
           Reflect.findClass(config.main.headerButtonTypeClass, lpparam.classLoader);
-      headerInterfaceAClass = Reflect.findClass(config.main.headerInterfaceA, lpparam.classLoader);
-      classLoader = lpparam.classLoader;
       final Object slotFarLeft =
           Reflect.getStaticObjectField(headerButtonTypeEnum, config.main.slotFarLeft);
 
@@ -55,11 +53,12 @@ public class HeaderButtonInjector implements BaseHook {
       ctorParams.add(config.chatHeader.fieldAppInfoId);
 
       // Resolve required methods before registering any constructor interception.
-      Reflect.findMethodExact(
-          headerControllerClass,
-          config.main.methodSetHeaderButton,
-          headerButtonTypeEnum,
-          config.main.headerInterfaceA);
+      Method updateButton =
+          Reflect.findMethodExact(
+              headerControllerClass,
+              config.main.methodSetHeaderButton,
+              headerButtonTypeEnum,
+              config.main.headerInterfaceA);
       headerControllerClass.getDeclaredField(config.main.fieldHeaderHelper);
       headerControllerClass.getDeclaredField(config.main.fieldChatActivity);
 
@@ -88,12 +87,7 @@ public class HeaderButtonInjector implements BaseHook {
               });
 
       Vector.module
-          .hook(
-              Reflect.findMethodExact(
-                  headerControllerClass,
-                  config.main.methodSetHeaderButton,
-                  headerButtonTypeEnum,
-                  config.main.headerInterfaceA))
+          .hook(updateButton)
           .intercept(
               chain -> {
                 Object result = chain.proceed();
@@ -115,7 +109,8 @@ public class HeaderButtonInjector implements BaseHook {
                 chain -> {
                   Object result = chain.proceed();
                   if (headerFeatureEnabled() && !Boolean.TRUE.equals(sCreating.get())) {
-                    Object controller = sHelperToControllerMap.get(chain.getThisObject());
+                    WeakReference<Object> ref = sHelperToControllerMap.get(chain.getThisObject());
+                    Object controller = ref == null ? null : ref.get();
                     if (controller != null) {
                       injectButton(controller, slotFarLeft, config);
                     }
@@ -181,7 +176,7 @@ public class HeaderButtonInjector implements BaseHook {
       sCreating.set(Boolean.TRUE);
       Object headerHelper = Reflect.getObjectField(controller, config.main.fieldHeaderHelper);
       if (headerHelper == null) return;
-      sHelperToControllerMap.put(headerHelper, controller);
+      sHelperToControllerMap.put(headerHelper, new WeakReference<>(controller));
 
       final Context context =
           (Context) Reflect.getObjectField(controller, config.main.fieldChatActivity);
@@ -218,33 +213,7 @@ public class HeaderButtonInjector implements BaseHook {
       Object headerButton =
           Reflect.callMethod(headerHelper, config.main.methodGetHeaderButtonView, slot);
 
-      if (headerButton == null) {
-        // LINE cleared the button; re-create it via methodSetHeaderButton with a no-op proxy
-        try {
-          Object noopProxy =
-              Proxy.newProxyInstance(
-                  classLoader,
-                  new Class<?>[] {headerInterfaceAClass},
-                  (p, m, args) -> {
-                    Class<?> rt = m.getReturnType();
-                    if (rt == boolean.class) return Boolean.FALSE;
-                    if (rt == int.class) return 0;
-                    if (rt == long.class) return 0L;
-                    if (rt == float.class) return 0f;
-                    if (rt == double.class) return 0d;
-                    if (rt == short.class) return (short) 0;
-                    if (rt == byte.class) return (byte) 0;
-                    if (rt == char.class) return '\0';
-                    return null;
-                  });
-          Reflect.callMethod(controller, config.main.methodSetHeaderButton, slot, noopProxy);
-          headerButton =
-              Reflect.callMethod(headerHelper, config.main.methodGetHeaderButtonView, slot);
-        } catch (Throwable t) {
-          Vector.log("Tencha: button recreate error: " + t.getMessage());
-        }
-      }
-
+      // The helper returns null while the native Header is not yet bound.
       if (headerButton == null) return;
       Reflect.callMethod(headerButton, "setButtonImageViewDrawable", icon);
 
@@ -283,7 +252,7 @@ public class HeaderButtonInjector implements BaseHook {
                     (Activity) Reflect.getObjectField(controller, config.main.fieldChatActivity);
                 if (activity == null) return;
 
-                String chatId = resolveChatId(activity, config);
+                String chatId = ChatHistoryRequest.resolveChatId(activity, config);
 
                 if (chatId != null && !chatId.isEmpty()) {
                   dev.vector.lineextension.ui.ReadHistoryViewer.show(activity, chatId);
@@ -307,7 +276,10 @@ public class HeaderButtonInjector implements BaseHook {
                     Activity activity =
                         (Activity)
                             Reflect.getObjectField(controller, config.main.fieldChatActivity);
-                    String chatId = activity == null ? null : resolveChatId(activity, config);
+                    String chatId =
+                        activity == null
+                            ? null
+                            : ChatHistoryRequest.resolveChatId(activity, config);
                     if (chatId == null || chatId.isEmpty()) return false;
                     String name = LineDBUtils.resolveChatName(chatId);
                     boolean enabled = ReadBlockStore.togglePersistent(chatId, name);
@@ -334,22 +306,5 @@ public class HeaderButtonInjector implements BaseHook {
   private static boolean headerFeatureEnabled() {
     return SettingsStore.get("record_read_history", false)
         || SettingsStore.get("per_chat_read_block", false);
-  }
-
-  private static String resolveChatId(Activity activity, LineVersion.Config config) {
-    String chatId = activity.getIntent().getStringExtra("chatId");
-    if (chatId == null || chatId.isEmpty()) {
-      chatId = activity.getIntent().getStringExtra("chat_id");
-    }
-    if (chatId == null || chatId.isEmpty()) {
-      try {
-        Object request = Reflect.getObjectField(activity, config.chat.chatIdField);
-        if (request != null) {
-          chatId = (String) Reflect.callMethod(request, config.chat.methodGetChatId);
-        }
-      } catch (Throwable ignored) {
-      }
-    }
-    return chatId;
   }
 }

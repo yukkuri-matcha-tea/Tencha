@@ -41,14 +41,92 @@ import org.json.JSONArray;
 public final class MessageWebActionsHook implements BaseHook {
   private static final int TAG_INJECTED = 0x64010031;
   private static final ExecutorService TRANSLATION_EXECUTOR = Executors.newSingleThreadExecutor();
+  private static final ThreadLocal<ActionSource> SHOWING_MESSAGE = new ThreadLocal<>();
   private static volatile String pendingText;
   private static volatile WeakReference<View> pendingMessageView = new WeakReference<>(null);
+
+  private static final class ActionSource {
+    final String text;
+    final WeakReference<View> view;
+
+    ActionSource(String text, WeakReference<View> view) {
+      this.text = text;
+      this.view = view;
+    }
+  }
 
   @Override
   public void hook(VectorConfig options, LoadParam lpparam) throws Throwable {
     LineVersion.Config.MessageContextMenu cfg = LineVersion.get().messageContextMenu;
     if (cfg.dialogClass.isEmpty() || cfg.fieldParams.isEmpty()) return;
     Class<?> dialogClass = Reflect.findClass(cfg.dialogClass, lpparam.classLoader);
+    boolean scoped = !cfg.textParamsClass.isEmpty();
+    if (scoped) {
+      hookNativeShow(cfg, dialogClass, lpparam.classLoader);
+    } else {
+      hookLegacyConstructor(cfg, dialogClass);
+    }
+    Vector.module
+        .hook(
+            Reflect.findMethodExact(
+                PopupWindow.class, "showAtLocation", View.class, int.class, int.class, int.class))
+        .intercept(
+            chain -> {
+              try {
+                PopupWindow popup = (PopupWindow) chain.getThisObject();
+                ActionSource source = scoped ? SHOWING_MESSAGE.get() : null;
+                String text = scoped ? (source == null ? null : source.text) : pendingText;
+                if (text != null && !text.trim().isEmpty() && isMessageMenu(popup)) {
+                  inject(popup, text, scoped ? source.view : pendingMessageView);
+                  if (!scoped) {
+                    pendingText = null;
+                    pendingMessageView = new WeakReference<>(null);
+                  }
+                }
+              } catch (Throwable t) {
+                Vector.log("Tencha: message web actions inject failed: " + t);
+              }
+              return chain.proceed();
+            });
+  }
+
+  private static void hookNativeShow(
+      LineVersion.Config.MessageContextMenu cfg, Class<?> dialogClass, ClassLoader loader)
+      throws ReflectiveOperationException {
+    Class<?> showClass = Reflect.findClass(cfg.showCoroutineClass, loader);
+    Class<?> textClass = Reflect.findClass(cfg.textParamsClass, loader);
+    showClass.getDeclaredField(cfg.fieldDialog);
+    dialogClass.getDeclaredField(cfg.fieldSelectedView);
+    Class<?> params = dialogClass.getDeclaredField(cfg.fieldParams).getType();
+    params.getDeclaredField(cfg.fieldTextParams);
+    textClass.getDeclaredField(cfg.fieldText);
+    Vector.module
+        .hook(Reflect.findMethodExact(showClass, cfg.methodInvokeSuspend, Object.class))
+        .intercept(
+            chain -> {
+              ActionSource previous = SHOWING_MESSAGE.get();
+              try {
+                Object dialog = Reflect.getObjectField(chain.getThisObject(), cfg.fieldDialog);
+                Object view = Reflect.getObjectField(dialog, cfg.fieldSelectedView);
+                String text = readMessageText(dialog, cfg, textClass);
+                SHOWING_MESSAGE.set(
+                    new ActionSource(
+                        text, new WeakReference<>(view instanceof View ? (View) view : null)));
+              } catch (Throwable t) {
+                SHOWING_MESSAGE.remove();
+                Vector.log("Tencha: message web action source unavailable: " + t);
+              }
+              try {
+                return chain.proceed();
+              } finally {
+                if (previous == null) SHOWING_MESSAGE.remove();
+                else SHOWING_MESSAGE.set(previous);
+              }
+            });
+  }
+
+  private static void hookLegacyConstructor(
+      LineVersion.Config.MessageContextMenu cfg, Class<?> dialogClass) {
     boolean constructorHooked = false;
     for (Constructor<?> constructor : dialogClass.getDeclaredConstructors()) {
       if (constructor.getParameterCount() != 8) continue;
@@ -58,13 +136,16 @@ public final class MessageWebActionsHook implements BaseHook {
           .intercept(
               chain -> {
                 Object result = chain.proceed();
-                String text = readMessageText(chain.getThisObject(), cfg);
+                String text = readMessageText(chain.getThisObject(), cfg, null);
                 if (text != null && !text.trim().isEmpty()) {
                   pendingText = text;
                   Object selectedView = chain.getArg(2);
                   pendingMessageView =
                       new WeakReference<>(
                           selectedView instanceof View ? (View) selectedView : null);
+                } else {
+                  pendingText = null;
+                  pendingMessageView = new WeakReference<>(null);
                 }
                 return result;
               });
@@ -72,25 +153,6 @@ public final class MessageWebActionsHook implements BaseHook {
     }
     if (!constructorHooked)
       throw new NoSuchMethodError(cfg.dialogClass + " 8-argument constructor");
-    Vector.module
-        .hook(
-            Reflect.findMethodExact(
-                PopupWindow.class, "showAtLocation", View.class, int.class, int.class, int.class))
-        .intercept(
-            chain -> {
-              try {
-                PopupWindow popup = (PopupWindow) chain.getThisObject();
-                String text = pendingText;
-                if (text != null && !text.trim().isEmpty() && isMessageMenu(popup)) {
-                  inject(popup, text, pendingMessageView);
-                  pendingText = null;
-                  pendingMessageView = new WeakReference<>(null);
-                }
-              } catch (Throwable t) {
-                Vector.log("Tencha: message web actions inject failed: " + t);
-              }
-              return chain.proceed();
-            });
   }
 
   private static boolean isMessageMenu(PopupWindow popup) {
@@ -130,6 +192,7 @@ public final class MessageWebActionsHook implements BaseHook {
     if (columns <= 0) return;
     ColorStateList iconTint = findNativeIconTint(rows, imageId);
     int searchIcon = drawable(context, "moremenu_ic_search");
+    if (searchIcon == 0) searchIcon = drawable(context, "navi_top_search");
     int translateIcon = drawable(context, "camera_ic_translate_selected");
     if (searchIcon == 0 || translateIcon == 0) return;
 
@@ -173,10 +236,12 @@ public final class MessageWebActionsHook implements BaseHook {
     popup.update();
   }
 
-  private static String readMessageText(Object dialog, LineVersion.Config.MessageContextMenu cfg) {
+  private static String readMessageText(
+      Object dialog, LineVersion.Config.MessageContextMenu cfg, Class<?> textClass) {
     try {
       Object params = Reflect.getObjectField(dialog, cfg.fieldParams);
       Object textParams = Reflect.getObjectField(params, cfg.fieldTextParams);
+      if (textClass != null && !textClass.isInstance(textParams)) return null;
       Object value = Reflect.getObjectField(textParams, cfg.fieldText);
       return value instanceof CharSequence ? value.toString() : null;
     } catch (Throwable ignored) {

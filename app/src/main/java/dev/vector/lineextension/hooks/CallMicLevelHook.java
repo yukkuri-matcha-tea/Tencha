@@ -59,7 +59,8 @@ public final class CallMicLevelHook implements BaseHook {
   private static volatile Method setVolumeMethod;
   private static volatile Object callSettingsMenuItem;
   private static final ThreadLocal<Boolean> independentMuteCall = new ThreadLocal<>();
-  private static volatile long independentMuteSession;
+  private static final Object INDEPENDENT_MUTE_LOCK = new Object();
+  private static long independentMuteSession;
   private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
   private static boolean isLine26150() {
@@ -203,7 +204,7 @@ public final class CallMicLevelHook implements BaseHook {
         Vector.log("TenchaCall: optional AudioControl refresh callback is unavailable");
       }
     } else {
-      Vector.log("Tencha: LINE 26.15 audio-engine hooks deferred during call isolation");
+      Vector.log("Tencha: call mixer installation deferred until needed");
     }
     // Register only Java interceptors here. Native mixer installation stays lazy;
     // do not restore the constructor-time patching that raced VoIP startup.
@@ -561,7 +562,9 @@ public final class CallMicLevelHook implements BaseHook {
             public void onStopTrackingTouch(SeekBar seekBar) {}
           });
     }
-    mainHandler.post(update);
+    // Retired meter/participant controls were the only consumers of this polling loop.
+    // Soundboard and TTS are event-driven; do not wake the main thread every 300 ms for them.
+    if (micMeterEnabled() || participantVolumeEnabled()) mainHandler.post(update);
   }
 
   private static void captureOwnCallName(Activity activity) {
@@ -713,10 +716,24 @@ public final class CallMicLevelHook implements BaseHook {
     if (!Main.options.independentCallMute.enabled) return;
     try {
       Class<?> session = Reflect.findClass(NATIVE_SESSION, loader);
+      boolean line26171 = NativeCallBridge.isLine26171();
+      boolean line26160 = "26.16.0".equals(LineVersion.getResolvedVersionName());
+      String streamMuteMethod = line26171 ? "V" : line26160 ? "t" : "o";
+      String sessionReleaseMethod = line26171 ? "T0" : line26160 ? "o0" : "g0";
+      String controlMuteMethod = line26171 || line26160 ? "j1" : "h1";
+      Method sessionGetter =
+          isLine26150()
+              ? Reflect.findMethodExact(audioControl, line26171 || line26160 ? "d1" : "b1")
+              : null;
+      Method streamMute =
+          Reflect.findMethodExact(session, streamMuteMethod, int.class, long.class, boolean.class);
+      Method sessionRelease = Reflect.findMethodExact(session, sessionReleaseMethod, long.class);
+      Method controlMute =
+          Reflect.findMethodExact(audioControl, controlMuteMethod, boolean.class, boolean.class);
       // Resolve and register the TX interception before enabling the outer hook.
       // Failed mixer installation always leaves LINE's original mute in effect.
       Vector.module
-          .hook(Reflect.findMethodExact(session, "o", int.class, long.class, boolean.class))
+          .hook(streamMute)
           .intercept(
               chain -> {
                 if (IndependentMutePolicy.keepTxAlive(
@@ -724,7 +741,11 @@ public final class CallMicLevelHook implements BaseHook {
                     (Boolean) chain.getArg(2),
                     Boolean.TRUE.equals(independentMuteCall.get()))) {
                   Object[] args = chain.getArgs().toArray();
-                  independentMuteSession = (Long) chain.getArg(1);
+                  if (sessionGetter == null) {
+                    synchronized (INDEPENDENT_MUTE_LOCK) {
+                      independentMuteSession = (Long) chain.getArg(1);
+                    }
+                  }
                   args[2] = false;
                   // Explicitly unmute TX, rather than skipping the call: TX may
                   // already have been muted before this interception.
@@ -733,27 +754,38 @@ public final class CallMicLevelHook implements BaseHook {
                 return chain.proceed();
               });
       Vector.module
-          .hook(Reflect.findMethodExact(session, "g0", long.class))
+          .hook(sessionRelease)
           .intercept(
               chain -> {
                 long releasedSession = (Long) chain.getArg(0);
                 Object result = chain.proceed();
-                if (releasedSession != 0L
-                    && releasedSession == independentMuteSession
-                    && result instanceof Integer
-                    && (Integer) result == 0) {
-                  independentMuteSession = 0L;
-                  NativeCallBridge.resetPhysicalMicMute();
+                if (releasedSession != 0L && result instanceof Integer && (Integer) result == 0) {
+                  synchronized (INDEPENDENT_MUTE_LOCK) {
+                    if (releasedSession == independentMuteSession) {
+                      independentMuteSession = 0L;
+                      NativeCallBridge.resetPhysicalMicMute();
+                    }
+                  }
                 }
                 return result;
               });
       Vector.module
-          .hook(Reflect.findMethodExact(audioControl, "h1", boolean.class, boolean.class))
+          .hook(controlMute)
           .intercept(
               chain -> {
                 boolean muted = (Boolean) chain.getArg(0);
                 Context context = Vector.currentApplication();
-                boolean mixerReady = NativeCallBridge.setPhysicalMicMuted(context, muted);
+                // The TX wrapper receives an audio-stream pointer. Release receives the
+                // owning session's pointer, so the physical mute gate must follow the session.
+                long nativeSession =
+                    muted ? callSessionPointer(sessionGetter, chain.getThisObject()) : 0L;
+                boolean mixerReady;
+                synchronized (INDEPENDENT_MUTE_LOCK) {
+                  mixerReady =
+                      (!muted || sessionGetter == null || nativeSession != 0L)
+                          && NativeCallBridge.setPhysicalMicMuted(context, muted);
+                  if (mixerReady && sessionGetter != null) independentMuteSession = nativeSession;
+                }
                 Boolean previous = independentMuteCall.get();
                 independentMuteCall.set(muted && mixerReady);
                 try {
@@ -765,6 +797,19 @@ public final class CallMicLevelHook implements BaseHook {
               });
     } catch (Throwable error) {
       Vector.log("Tencha: independent microphone mute hook unavailable", error);
+    }
+  }
+
+  private static long callSessionPointer(Method sessionGetter, Object control) {
+    if (sessionGetter == null) return 0L;
+    try {
+      Object session = sessionGetter.invoke(control);
+      if (session == null) return 0L;
+      Object handle = Reflect.getObjectField(session, "d");
+      return Reflect.getLongField(handle, "a");
+    } catch (Throwable error) {
+      Vector.log("Tencha: call session handle unavailable", error);
+      return 0L;
     }
   }
 
@@ -791,15 +836,19 @@ public final class CallMicLevelHook implements BaseHook {
       boolean line26150 = isLine26150();
       String itemInterfaceName = line26150 ? "vw7.e" : "xp7.e";
       String settingsProviderName = line26150 ? "vw7.j" : "xp7.j";
-      String settingsItemsMethod = line26150 ? "v" : "u";
+      boolean line26160 = "26.16.0".equals(LineVersion.getResolvedVersionName());
+      boolean line26171 = NativeCallBridge.isLine26171();
+      String settingsItemsMethod = line26160 ? "x" : (line26150 ? "v" : "u");
+      String titleMethod = line26150 && !line26160 ? "g" : "d";
+      String enabledMethod = line26150 && !line26171 ? "j" : "h";
       Class<?> itemInterface = Reflect.findClass(itemInterfaceName, classLoader);
-      Class<?> mutableLiveData = Reflect.findClass("androidx.lifecycle.h1", classLoader);
+      Class<?> liveData = Reflect.findClass("androidx.lifecycle.h1", classLoader);
       // Resolve every value before exposing the proxy to LINE. If LINE changes this API, menu
       // injection fails closed during startup instead of crashing RecyclerView while it binds.
-      Object enabledValue = newConstantLiveData(mutableLiveData, Boolean.TRUE);
+      Object enabledValue = newConstantLiveData(liveData, Boolean.TRUE);
       Object iconValue =
-          newConstantLiveData(mutableLiveData, Integer.valueOf(android.R.drawable.ic_menu_manage));
-      Object titleValue = newConstantLiveData(mutableLiveData, "Tencha 通話調整");
+          newConstantLiveData(liveData, Integer.valueOf(android.R.drawable.ic_menu_manage));
+      Object titleValue = newConstantLiveData(liveData, "Tencha 通話調整");
       callSettingsMenuItem =
           Proxy.newProxyInstance(
               classLoader,
@@ -812,8 +861,8 @@ public final class CallMicLevelHook implements BaseHook {
                 }
                 if ("b".equals(name)) return iconValue;
                 if ("c".equals(name)) return null;
-                if ((line26150 ? "g" : "d").equals(name)) return titleValue;
-                if ((line26150 ? "j" : "h").equals(name)) return enabledValue;
+                if (titleMethod.equals(name)) return titleValue;
+                if (enabledMethod.equals(name)) return enabledValue;
                 if ("toString".equals(name)) return "TenchaCallSettingsMenuItem";
                 if ("hashCode".equals(name)) return System.identityHashCode(proxy);
                 if ("equals".equals(name)) return proxy == (args == null ? null : args[0]);
@@ -831,12 +880,19 @@ public final class CallMicLevelHook implements BaseHook {
                 items.add(callSettingsMenuItem);
                 return items;
               });
+      Vector.log("Tencha: call settings menu hook installed");
     } catch (Throwable error) {
       Vector.log("Tencha: call settings menu injection unavailable", error);
     }
   }
 
   private static Object newConstantLiveData(Class<?> liveDataClass, Object value) {
+    if (NativeCallBridge.isLine26171()) {
+      // The current MutableLiveData exposes only a no-arg constructor and inherits setValue.
+      Object liveData = Reflect.newInstance(liveDataClass);
+      Reflect.callMethod(liveData, "u", value);
+      return liveData;
+    }
     try {
       return Reflect.newInstance(liveDataClass, value);
     } catch (Throwable noValueConstructor) {
@@ -956,9 +1012,8 @@ public final class CallMicLevelHook implements BaseHook {
     int mainContentId =
         activity.getResources().getIdentifier("main_content", "id", activity.getPackageName());
     if (mainContentId == 0) return null;
-    // LINE 26.14.0 bundles a minified AndroidX build. FragmentManager#getFragments no longer
-    // exists by that name; LINE itself resolves the active call Fragment through r0.I(int).
-    return Reflect.callMethod(manager, "I", mainContentId);
+    // AndroidX's findFragmentById is obfuscated in LINE's build.
+    return Reflect.callMethod(manager, NativeCallBridge.isLine26171() ? "J" : "I", mainContentId);
   }
 
   private static void captureCallChat(Activity activity) {
@@ -968,9 +1023,7 @@ public final class CallMicLevelHook implements BaseHook {
       if (fragment == null) return;
       if (isClassOrSuperclass(fragment, GROUP_FRAGMENT)) {
         Object session = Reflect.getObjectField(fragment, "d");
-        Object model = Reflect.getObjectField(session, "l");
-        Object connect = Reflect.getObjectField(model, "j");
-        CallTtsManager.setCallGroupChatId((String) Reflect.callMethod(connect, "q"));
+        CallTtsMessageHook.captureGroupChatId(session);
       } else if (isClassOrSuperclass(fragment, FREE_FRAGMENT)
           || isClassOrSuperclass(fragment, OA_FRAGMENT)) {
         CallTtsManager.setCallGroupChatId(null);

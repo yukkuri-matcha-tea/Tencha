@@ -35,6 +35,7 @@ public class UnsendProtector implements BaseHook {
   private static final int MAX_UNSEND_EVENTS = 10000;
 
   private static final int TIMESTAMP_MSG_ID_TAG = 0x7f7a0001;
+  private static final int INDICATOR_TAG = 0x7f7a0002;
   private static final int TIMESTAMP_VIEW_CLEANUP_INTERVAL = 64;
   private static final Map<String, String> unsendEvents = new ConcurrentHashMap<>();
   private static final Map<String, WeakReference<TextView>> timestampViews =
@@ -50,42 +51,75 @@ public class UnsendProtector implements BaseHook {
 
     LineVersion.Config cfg = LineVersion.get();
 
-    try {
-      Vector.hookAll(
-          Reflect.findClass(cfg.unsend.notifiedDestroyMessageHandlerClass, lpparam.classLoader),
-          cfg.unsend.methodReadBuffer,
-          chain -> {
-            Object result = chain.proceed();
-            if (Main.options.preventUnsendMessage.enabled) {
-              try {
-                handleIncomingOperation(chain);
-              } catch (Exception e) {
-                Vector.log("Tencha: Unsend error: " + e);
-              }
-            }
-            return result;
-          });
-    } catch (Throwable t) {
-      Vector.log("Tencha: Unsend op hook failed: " + t);
-    }
-
     if (cfg.unsend.unsendDestroyHandlerClass != null
         && !cfg.unsend.unsendDestroyHandlerClass.isEmpty()) {
       try {
-        Vector.hookAll(
-            Reflect.findClass(cfg.unsend.unsendDestroyHandlerClass, lpparam.classLoader),
-            "b",
-            chain -> {
-              if (Main.options.preventUnsendMessage.enabled) {
-                try {
-                  handleDestroyHandler(chain, cfg);
-                } catch (Throwable ignored) {
-                }
-              }
-              return chain.proceed();
-            });
+        Class<?> handler =
+            Reflect.findClass(cfg.unsend.unsendDestroyHandlerClass, lpparam.classLoader);
+        final Object handled =
+            cfg.unsend.destroyResultClass.isEmpty()
+                ? null
+                : Reflect.newInstance(
+                    Reflect.findClass(cfg.unsend.destroyResultClass, lpparam.classLoader), true);
+        int registered = 0;
+        for (Method method : handler.getDeclaredMethods()) {
+          Class<?>[] types = method.getParameterTypes();
+          if (!method.getName().equals(cfg.unsend.methodReadBuffer)
+              || types.length != 3
+              || !types[1].getName().equals(cfg.unsend.operationClass)) continue;
+          Vector.module
+              .hook(method)
+              .intercept(
+                  chain -> {
+                    if (!Main.options.preventUnsendMessage.enabled) return chain.proceed();
+                    Object operation = chain.getArg(1);
+                    String messageId;
+                    if (operation == null) return chain.proceed();
+                    boolean retain;
+                    try {
+                      Object type =
+                          Reflect.getObjectField(operation, cfg.unsend.operationTypeField);
+                      messageId =
+                          (String)
+                              Reflect.getObjectField(operation, cfg.unsend.operationParam2Field);
+                      retain =
+                          UnsendPolicy.shouldRetain(
+                              type instanceof Enum<?> ? ((Enum<?>) type).name() : null,
+                              messageId,
+                              cfg.unsend.operationNotifiedUnsendName,
+                              cfg.unsend.operationUnsendName);
+                    } catch (Throwable error) {
+                      Vector.log(
+                          "Tencha: Unsend operation read failed: "
+                              + error.getClass().getSimpleName());
+                      return chain.proceed();
+                    }
+                    if (!retain) return chain.proceed();
+                    if (!unsendEvents.containsKey(messageId))
+                      persistUnsendEvent(messageId, getFormattedTime());
+                    TextView timestamp = getTimestampView(messageId);
+                    if (timestamp != null)
+                      applyUnsendIndicator(timestamp, timestamp.getContext(), messageId);
+                    RuntimeReporter.working("unsend_retention", "取消イベントの保持をRuntime確認");
+                    // 26.16: acknowledge this notification without entering the destructive
+                    // DB/media path.
+                    // Do not mutate the shared operation: other consumers still need its type and
+                    // ID.
+                    if (handled != null) return handled;
+                    // Older verified handlers use the same ID lookup. Restore it before returning.
+                    Reflect.setObjectField(operation, cfg.unsend.operationParam2Field, "");
+                    try {
+                      return chain.proceed();
+                    } finally {
+                      Reflect.setObjectField(operation, cfg.unsend.operationParam2Field, messageId);
+                    }
+                  });
+          registered++;
+        }
+        if (registered == 0) throw new NoSuchMethodException("Unsend operation handler");
       } catch (Throwable t) {
         Vector.log("Tencha: Destroy handler hook failed: " + t);
+        throw new IllegalStateException("Unsend retention registration failed", t);
       }
     }
 
@@ -94,11 +128,21 @@ public class UnsendProtector implements BaseHook {
           Reflect.findClass(cfg.unsend.chatMessageViewHolderClass, lpparam.classLoader),
           cfg.unsend.methodBind,
           chain -> {
+            try {
+              View root = MessageItemView.get(chain.getThisObject(), cfg);
+              TextView timestamp = root == null ? null : root.findViewById(cfg.res.idTimestamp);
+              if (timestamp != null) {
+                clearTimestampViewMapping(timestamp);
+                resetViewProperties(timestamp);
+              }
+            } catch (Throwable error) {
+              Vector.log("Tencha: Unsend cleanup failed: " + error.getClass().getSimpleName());
+            }
             Object result = chain.proceed();
             if (Main.options.preventUnsendMessage.enabled) {
               try {
                 handleViewHolderBinding(chain);
-              } catch (Exception e) {
+              } catch (Throwable e) {
                 Vector.log("Tencha: Bind error: " + e);
               }
             }
@@ -111,29 +155,8 @@ public class UnsendProtector implements BaseHook {
               + cfg.unsend.methodBind);
     } catch (Throwable t) {
       Vector.log("Tencha: Bind hook failed: " + t);
+      throw new IllegalStateException("Unsend indicator registration failed", t);
     }
-  }
-
-  private static void handleDestroyHandler(XposedInterface.Chain chain, LineVersion.Config cfg) {
-    Method m = (Method) chain.getExecutable();
-    Class<?>[] types = m.getParameterTypes();
-    if (types.length != 3 || !types[1].getName().equals(cfg.unsend.operationClass)) return;
-
-    Object aeVar = chain.getArg(1);
-    if (aeVar == null) return;
-
-    String msgId = (String) Reflect.getObjectField(aeVar, "h");
-    if (msgId == null || msgId.isEmpty()) return;
-
-    if (!unsendEvents.containsKey(msgId)) {
-      Vector.log("Tencha: Blocked unsend (handler), id=" + msgId);
-      persistUnsendEvent(msgId, getFormattedTime());
-    }
-
-    Reflect.setObjectField(aeVar, "h", "");
-
-    TextView tsView = getTimestampView(msgId);
-    if (tsView != null) applyUnsendIndicator(tsView, tsView.getContext(), msgId);
   }
 
   private static void initializeUnsendCache() {
@@ -183,38 +206,6 @@ public class UnsendProtector implements BaseHook {
     return new SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.getDefault()).format(new Date());
   }
 
-  private static void handleIncomingOperation(XposedInterface.Chain chain) throws Exception {
-    LineVersion.Config cfg = LineVersion.get();
-    Object operation = chain.getArg(1);
-    if (operation == null || operation instanceof String) return;
-    if (operation.getClass().getName().startsWith("java.")) return;
-
-    Object type = Reflect.getObjectField(operation, cfg.unsend.operationTypeField);
-    if (type == null) return;
-
-    String typeStr = type.toString();
-    if (!cfg.unsend.operationNotifiedUnsendName.equals(typeStr)
-        && !cfg.unsend.operationUnsendName.equals(typeStr)) return;
-
-    String msgId = (String) Reflect.getObjectField(operation, cfg.unsend.operationParam2Field);
-    if (msgId == null || msgId.isEmpty()) return;
-
-    if (!unsendEvents.containsKey(msgId)) {
-      String time = getFormattedTime();
-      Vector.log("Tencha: Blocked unsend, id=" + msgId);
-      persistUnsendEvent(msgId, time);
-      RuntimeReporter.working("unsend_retention", "取消イベントの保持をRuntime確認");
-    }
-
-    Object harmlessType =
-        Reflect.callStaticMethod(
-            type.getClass(), cfg.unsend.methodOperationTypeValueOf, cfg.unsend.operationTypeDummy);
-    Reflect.setObjectField(operation, cfg.unsend.operationTypeField, harmlessType);
-
-    TextView tsView = getTimestampView(msgId);
-    if (tsView != null) applyUnsendIndicator(tsView, tsView.getContext(), msgId);
-  }
-
   private static void handleViewHolderBinding(XposedInterface.Chain chain) throws Exception {
     LineVersion.Config cfg = LineVersion.get();
     Object viewData = chain.getArg(cfg.unsend.methodBindIndex);
@@ -223,14 +214,12 @@ public class UnsendProtector implements BaseHook {
     if (commonData == null) return;
 
     String msgId = (String) Reflect.getObjectField(commonData, cfg.unsend.chatMessageIdField);
-    View root = (View) Reflect.callMethod(chain.getThisObject(), cfg.unsend.methodGetItemView);
+    View root = MessageItemView.get(chain.getThisObject(), cfg);
     if (root == null) return;
 
     TextView tsView = (TextView) root.findViewById(cfg.res.idTimestamp);
     if (tsView == null) return;
 
-    clearTimestampViewMapping(tsView);
-    resetViewProperties(tsView);
     if (msgId != null && !msgId.isEmpty()) {
       tsView.setTag(TIMESTAMP_MSG_ID_TAG, msgId);
       timestampViews.put(msgId, new WeakReference<>(tsView));
@@ -258,8 +247,14 @@ public class UnsendProtector implements BaseHook {
 
     tsView.post(
         () -> {
-          if (!msgId.equals(tsView.getTag(TIMESTAMP_MSG_ID_TAG))) return;
-          tsView.setCompoundDrawables(null, null, draw, null);
+          if (!Main.options.preventUnsendMessage.enabled
+              || !msgId.equals(tsView.getTag(TIMESTAMP_MSG_ID_TAG))) return;
+          if (tsView.getTag(INDICATOR_TAG) == null) {
+            tsView.setTag(INDICATOR_TAG, new IndicatorState(tsView));
+          }
+          IndicatorState state = (IndicatorState) tsView.getTag(INDICATOR_TAG);
+          tsView.setCompoundDrawables(
+              state.drawables[0], state.drawables[1], draw, state.drawables[3]);
           tsView.setCompoundDrawablePadding(padPx);
           tsView.setOnClickListener(
               v -> {
@@ -309,13 +304,27 @@ public class UnsendProtector implements BaseHook {
   }
 
   private static void resetViewProperties(final TextView tsView) {
-    tsView.post(
-        () -> {
-          tsView.setCompoundDrawables(null, null, null, null);
-          tsView.setCompoundDrawablePadding(0);
-          tsView.setOnClickListener(null);
-          tsView.setClickable(false);
-        });
+    Object tag = tsView.getTag(INDICATOR_TAG);
+    if (!(tag instanceof IndicatorState)) return;
+    IndicatorState state = (IndicatorState) tag;
+    tsView.setCompoundDrawables(
+        state.drawables[0], state.drawables[1], state.drawables[2], state.drawables[3]);
+    tsView.setCompoundDrawablePadding(state.padding);
+    tsView.setOnClickListener(null);
+    tsView.setClickable(state.clickable);
+    tsView.setTag(INDICATOR_TAG, null);
+  }
+
+  private static final class IndicatorState {
+    final android.graphics.drawable.Drawable[] drawables;
+    final int padding;
+    final boolean clickable;
+
+    IndicatorState(TextView view) {
+      drawables = view.getCompoundDrawables();
+      padding = view.getCompoundDrawablePadding();
+      clickable = view.isClickable();
+    }
   }
 
   private static Bitmap resolveIndicatorIcon(Context ctx) {

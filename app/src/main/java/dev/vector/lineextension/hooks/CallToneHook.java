@@ -15,6 +15,7 @@ public final class CallToneHook implements BaseHook {
   public void hook(VectorConfig config, LoadParam param) {
     if (!NativeCallBridge.uses2615CallApi()) return;
     ClassLoader loader = param.classLoader;
+    String uriToneSource = NativeCallBridge.isLine26171() ? "x30.b" : "a40.b";
     for (String source : new String[] {"ps7.a$a$a", "ps7.a$a$b"}) {
       try {
         Vector.module
@@ -28,7 +29,7 @@ public final class CallToneHook implements BaseHook {
                               (Context) chain.getArg(0), CallToneStore.Kind.RINGTONE);
                       if (file != null)
                         return Reflect.newInstance(
-                            Reflect.findClass("a40.b", loader), Uri.fromFile(file));
+                            Reflect.findClass(uriToneSource, loader), Uri.fromFile(file));
                     } catch (Throwable error) {
                       Vector.log("Tencha: custom ringtone unavailable; using LINE tone", error);
                     }
@@ -61,7 +62,7 @@ public final class CallToneHook implements BaseHook {
                             source.equals("ps7.a$b$b"));
                     if (selected == CallTonePolicy.Source.CUSTOM)
                       return Reflect.newInstance(
-                          Reflect.findClass("a40.b", loader), Uri.fromFile(file));
+                          Reflect.findClass(uriToneSource, loader), Uri.fromFile(file));
                     if (selected == CallTonePolicy.Source.DEFAULT)
                       return Reflect.callMethod(standard, "b", chain.getArg(0));
                   } catch (Throwable error) {

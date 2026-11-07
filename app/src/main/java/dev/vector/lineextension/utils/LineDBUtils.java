@@ -5,6 +5,8 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import dev.vector.lineextension.LineVersion;
 import dev.vector.lineextension.Vector;
+import dev.vector.lineextension.core.ByteLruCache;
+import dev.vector.lineextension.core.DevicePerformance;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -13,6 +15,22 @@ import java.util.List;
 import java.util.Locale;
 
 public class LineDBUtils {
+  private static final class Name {
+    final String text;
+    final long until;
+
+    Name(String text) {
+      this.text = text;
+      until = System.nanoTime() + 3_000_000_000L;
+    }
+  }
+
+  private static final ByteLruCache<String, Name> names =
+      new ByteLruCache<>(DevicePerformance.profile().nameCacheEntries(), value -> 1);
+
+  static {
+    DevicePerformance.addCacheTrimmer(names::clear);
+  }
 
   public static String resolveMemberName(String mid) {
     if (mid == null) return null;
@@ -20,22 +38,23 @@ public class LineDBUtils {
       Context context = Vector.currentApplication();
       if (context == null) return null;
       File dbFile = context.getDatabasePath("contact");
+      String key = dbFile.getAbsolutePath() + ":" + mid;
+      Name cached = names.get(key);
+      if (cached != null && System.nanoTime() < cached.until) return cached.text;
       if (dbFile.exists()) {
-        SQLiteDatabase db =
-            SQLiteDatabase.openDatabase(
-                dbFile.getAbsolutePath(), null, SQLiteDatabase.OPEN_READONLY);
-        Cursor cursor =
-            db.rawQuery(
-                "SELECT coalesce(overridden_name, address_book_name, profile_name) FROM contacts WHERE mid = ?",
-                new String[] {mid});
-        if (cursor.moveToFirst()) {
-          String name = cursor.getString(0);
-          cursor.close();
-          db.close();
-          return name;
+        try (SQLiteDatabase db =
+                SQLiteDatabase.openDatabase(
+                    dbFile.getAbsolutePath(), null, SQLiteDatabase.OPEN_READONLY);
+            Cursor cursor =
+                db.rawQuery(
+                    "SELECT coalesce(overridden_name, address_book_name, profile_name) FROM contacts WHERE mid = ?",
+                    new String[] {mid})) {
+          if (cursor.moveToFirst()) {
+            String name = cursor.getString(0);
+            if (name != null) names.put(key, new Name(name));
+            return name;
+          }
         }
-        cursor.close();
-        db.close();
       }
     } catch (Throwable t) {
       Vector.log("Tencha: Member name resolution failed: " + t);
@@ -398,18 +417,19 @@ public class LineDBUtils {
     }
   }
 
+  /** Returns null when the message database could not be read. */
   public static List<MessageRecord> fetchMyMessagesUpTo(
-      String targetChatId, long minExclusiveId, long maxInclusiveId, String myMid) {
+      String targetChatId, long minExclusiveId, long maxInclusiveId, String myMid, int limit) {
     List<MessageRecord> results = new ArrayList<>();
     if (targetChatId == null || myMid == null) return results;
     if (maxInclusiveId <= minExclusiveId) return results;
 
     try {
       Context context = Vector.currentApplication();
-      if (context == null) return results;
+      if (context == null) return null;
 
       File dbFile = context.getDatabasePath("naver_line");
-      if (!dbFile.exists()) return results;
+      if (!dbFile.exists()) return null;
 
       SQLiteDatabase db =
           SQLiteDatabase.openDatabase(dbFile.getAbsolutePath(), null, SQLiteDatabase.OPEN_READONLY);
@@ -425,11 +445,15 @@ public class LineDBUtils {
                 + "AND CAST(server_id AS INTEGER) > ? "
                 + "AND CAST(server_id AS INTEGER) <= ? "
                 + "AND (from_mid = ? OR from_mid IS NULL) "
-                + "ORDER BY CAST(server_id AS INTEGER) DESC";
+                + "ORDER BY CAST(server_id AS INTEGER) DESC LIMIT ?";
 
         String[] args =
             new String[] {
-              targetChatId, String.valueOf(minExclusiveId), String.valueOf(maxInclusiveId), myMid
+              targetChatId,
+              String.valueOf(minExclusiveId),
+              String.valueOf(maxInclusiveId),
+              myMid,
+              String.valueOf(limit)
             };
 
         Cursor cursor = db.rawQuery(sql, args);
@@ -466,6 +490,7 @@ public class LineDBUtils {
       }
     } catch (Throwable t) {
       Vector.log("Tencha: Message resolution error: " + t.getMessage());
+      return null;
     }
     return results;
   }

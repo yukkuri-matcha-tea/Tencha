@@ -250,6 +250,15 @@ public class PlusMenuHook implements BaseHook {
         args[i] = label;
       }
     }
+    if ("26.16.0".equals(LineVersion.getResolvedVersionName())) {
+      args[3] =
+          Reflect.getStaticObjectField(
+              Reflect.findClass(
+                  types[3].getName() + "$a", itemEntry.getDeclaringClass().getClassLoader()),
+              "a");
+      // The item renderer's default bit 16 selects LINE's native alignment.
+      args[args.length - 1] = 16;
+    }
     itemEntry.invoke(null, args);
   }
 

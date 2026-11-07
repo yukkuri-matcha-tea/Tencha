@@ -84,6 +84,7 @@ public class VectorConfig {
   public final Item showSecondsInChatTime        = item("show_seconds_in_chat_time",        OPT_SHOW_SECONDS_IN_CHAT_TIME_LABEL,        OPT_SHOW_SECONDS_IN_CHAT_TIME_DESC,        false, Category.CHAT,         SEC_CHAT_DISPLAY);
   public final Item soundboard                   = item("soundboard",                       OPT_SOUNDBOARD_LABEL,                       OPT_SOUNDBOARD_DESC,                       true,  Category.CALL,         "音声送信");
   public final Item callTts                      = item("call_tts",                         OPT_CALL_TTS_LABEL,                         OPT_CALL_TTS_DESC,                         true,  Category.CALL,         "音声送信");
+  public final Item allowCallMultitasking        = item("allow_call_multitasking",         "通話中の操作制限を解除",                  "LINE通話中でもカメラ・動画選択・ボイスメッセージ録音を開けるようにします。端末の電話中・権限・容量不足の制限は解除しません。録音やカメラの同時使用可否は端末に依存します。", true, Category.CALL, "通話中の操作");
   public final Item independentCallMute          = item("independent_call_mute",            OPT_INDEPENDENT_CALL_MUTE_LABEL,            OPT_INDEPENDENT_CALL_MUTE_DESC,            false, Category.CALL,         "音声送信");
   public final Item customCallRingtone = item("custom_call_ringtone", "着信音を変更", "この端末で鳴る着信音を、選んだ音声に変更します。", false, Category.CALL, "着信音");
   public final Item callRingtoneFile = item("call_ringtone_file", "音声ファイル", "着信音に使う音声を選択します。", false, Category.CALL, "着信音");

@@ -81,6 +81,12 @@ public class ChatTimestampSeconds implements BaseHook {
       Class<?> displayTimeIface,
       int timestampId)
       throws Throwable {
+    View root = MessageItemView.get(chain.getThisObject(), cfg);
+    if (root == null) return;
+    TextView tsView = (TextView) root.findViewById(timestampId);
+    if (tsView == null) return;
+    // A recycled timestamp must never keep the previous message's seconds.
+    tsView.setTag(timestampId, null);
     Object viewData = chain.getArg(cfg.unsend.methodBindIndex);
     if (viewData == null) return;
 
@@ -94,11 +100,6 @@ public class ChatTimestampSeconds implements BaseHook {
     if (!(millisObj instanceof Number)) return;
     long createdMillis = ((Number) millisObj).longValue();
     if (createdMillis <= 0) return;
-
-    View root = (View) Reflect.callMethod(chain.getThisObject(), cfg.unsend.methodGetItemView);
-    if (root == null) return;
-    TextView tsView = (TextView) root.findViewById(timestampId);
-    if (tsView == null) return;
 
     tsView.setTag(timestampId, createdMillis);
   }

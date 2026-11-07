@@ -6,6 +6,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.provider.DocumentsContract;
 import dev.vector.lineextension.core.ControlClient;
+import dev.vector.lineextension.core.SnapshotCache;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -45,6 +46,7 @@ public class SettingsStore {
   private static final byte[] READ_HISTORY_MAGIC = {'K', 'R', 'H', '1'};
 
   private static final String READ_HISTORY_TIME_FMT = "yyyy-MM-dd HH:mm:ss";
+  private static final Object READ_HISTORY_LOCK = new Object();
   private static final String UNSEND_HISTORY_TIME_FMT = "yyyy/MM/dd HH:mm:ss";
 
   private static volatile String pointerPath = null;
@@ -52,7 +54,7 @@ public class SettingsStore {
   private static volatile Uri cachedTreeUri = null;
   private static final Map<String, Uri> cachedDocUris = new ConcurrentHashMap<>();
   private static volatile boolean isModuleLoaded = false;
-  private static volatile JSONObject cachedSettingsJson = null;
+  private static final SnapshotCache<JSONObject> settingsCache = new SnapshotCache<>();
   private static final Map<String, Object> runtimeSettings = new ConcurrentHashMap<>();
 
   public static void init(android.app.Activity activity) {
@@ -64,6 +66,7 @@ public class SettingsStore {
   }
 
   public static void setContext(Context context) {
+    if (appContext == null) settingsCache.set(null);
     appContext = context;
     ensurePointerPath(context);
     migrateLegacyStorage();
@@ -157,7 +160,7 @@ public class SettingsStore {
     Object override = runtimeSettings.get(key);
     if (override instanceof String) return (String) override;
     try {
-      JSONObject json = readJson(SETTINGS_FILE);
+      JSONObject json = getSettingsJson();
       if (json.has(key)) return json.getString(key);
     } catch (Throwable ignored) {
     }
@@ -166,7 +169,7 @@ public class SettingsStore {
 
   public static JSONObject loadAll() {
     try {
-      return readJson(SETTINGS_FILE);
+      return new JSONObject(getSettingsJson().toString());
     } catch (Throwable e) {
       return new JSONObject();
     }
@@ -179,7 +182,7 @@ public class SettingsStore {
         throw new IOException("Tencha本体の設定を初期化できません");
       }
       runtimeSettings.clear();
-      cachedSettingsJson = new JSONObject();
+      settingsCache.set(new JSONObject());
       return true;
     } catch (Throwable error) {
       android.util.Log.e("Vector", "SettingsStore.reset failed", error);
@@ -188,26 +191,24 @@ public class SettingsStore {
   }
 
   private static JSONObject getSettingsJson() throws Throwable {
-    if (cachedSettingsJson != null) return cachedSettingsJson;
-    synchronized (SettingsStore.class) {
-      if (cachedSettingsJson != null) return cachedSettingsJson;
-      byte[] data = readDeflated(SETTINGS_FILE);
-      if (data == null) {
-        return new JSONObject();
-      }
-      String text = new String(data, StandardCharsets.UTF_8).trim();
-      cachedSettingsJson = text.isEmpty() ? new JSONObject() : new JSONObject(text);
-      return cachedSettingsJson;
-    }
+    JSONObject snapshot =
+        settingsCache.get(
+            () -> {
+              byte[] data = readDeflated(SETTINGS_FILE);
+              if (data == null) return null;
+              String text = new String(data, StandardCharsets.UTF_8).trim();
+              return text.isEmpty() ? new JSONObject() : new JSONObject(text);
+            });
+    return snapshot == null ? new JSONObject() : snapshot;
   }
 
   private static void putSetting(String key, Object value) {
     try {
       synchronized (SettingsStore.class) {
-        JSONObject json = getSettingsJson();
+        JSONObject json = new JSONObject(getSettingsJson().toString());
         json.put(key, value);
         writeJson(SETTINGS_FILE, json);
-        cachedSettingsJson = json;
+        settingsCache.set(json);
       }
     } catch (Throwable e) {
       android.util.Log.e("Vector", "SettingsStore.save failed", e);
@@ -277,17 +278,31 @@ public class SettingsStore {
   }
 
   public static JSONObject loadReadHistory() {
-    try {
-      return readReadHistory();
-    } catch (Throwable e) {
-      return new JSONObject();
+    synchronized (READ_HISTORY_LOCK) {
+      try {
+        return readReadHistory();
+      } catch (Throwable e) {
+        return new JSONObject();
+      }
     }
   }
 
-  public static void saveReadHistory(JSONObject json) {
-    try {
-      writeReadHistory(json);
-    } catch (Throwable ignored) {
+  @FunctionalInterface
+  public interface ReadHistoryUpdate {
+    boolean apply(JSONObject history) throws Exception;
+  }
+
+  public static boolean updateReadHistory(ReadHistoryUpdate update) {
+    synchronized (READ_HISTORY_LOCK) {
+      try {
+        JSONObject history = readReadHistory();
+        if (!update.apply(history)) return false;
+        writeReadHistory(history);
+        return true;
+      } catch (Throwable error) {
+        Vector.log("Tencha: Read history update failed", error);
+        return false;
+      }
     }
   }
 
@@ -544,7 +559,9 @@ public class SettingsStore {
     if (appContext == null) throw new IllegalStateException("Tencha store is unavailable");
     Uri docUri = ControlClient.storeUri(fileName);
     try (OutputStream os = appContext.getContentResolver().openOutputStream(docUri, "wt")) {
-      Deflater def = new Deflater(Deflater.BEST_COMPRESSION);
+      Deflater def =
+          new Deflater(
+              fileName.equals(SETTINGS_FILE) ? Deflater.BEST_SPEED : Deflater.DEFAULT_COMPRESSION);
       try (DeflaterOutputStream dos = new DeflaterOutputStream(os, def)) {
         dos.write(data);
       } finally {

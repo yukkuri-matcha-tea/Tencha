@@ -10,6 +10,16 @@ import org.junit.Test;
 
 public class VectorConfigTest {
   @Test
+  public void callMultitaskingHasAnEnabledCallToggleAndExplainsHardwareLimits() {
+    VectorConfig config = new VectorConfig();
+    assertTrue(config.allowCallMultitasking.enabled);
+    assertTrue(config.allowCallMultitasking.category == VectorConfig.Category.CALL);
+    assertTrue(Arrays.asList(config.items).contains(config.allowCallMultitasking));
+    assertTrue(config.allowCallMultitasking.description.contains("権限・容量不足"));
+    assertTrue(config.allowCallMultitasking.description.contains("端末に依存"));
+  }
+
+  @Test
   public void resetRestoresEveryRegisteredDefaultAndClearsStringValues() {
     VectorConfig config = new VectorConfig();
     for (VectorConfig.Item item : config.items) {

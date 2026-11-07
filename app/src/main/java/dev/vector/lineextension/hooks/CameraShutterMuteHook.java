@@ -7,12 +7,16 @@ import dev.vector.lineextension.LoadParam;
 import dev.vector.lineextension.Reflect;
 import dev.vector.lineextension.Vector;
 import dev.vector.lineextension.VectorConfig;
+import java.util.Collections;
+import java.util.Map;
 import java.util.Set;
+import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class CameraShutterMuteHook implements BaseHook {
 
-  private static final Set<Integer> mutedSoundIds = ConcurrentHashMap.newKeySet();
+  private static final Map<SoundPool, Set<Integer>> mutedSoundIds =
+      Collections.synchronizedMap(new WeakHashMap<>());
   private static final Set<Integer> targetResIds = ConcurrentHashMap.newKeySet();
   private static volatile boolean isResIdsLoaded = false;
 
@@ -46,8 +50,15 @@ public class CameraShutterMuteHook implements BaseHook {
                 }
 
                 Object result = chain.proceed();
-                if (result instanceof Integer && targetResIds.contains((int) chain.getArg(1))) {
-                  mutedSoundIds.add((Integer) result);
+                if (result instanceof Integer
+                    && (Integer) result != 0
+                    && targetResIds.contains((int) chain.getArg(1))) {
+                  SoundPool pool = (SoundPool) chain.getThisObject();
+                  synchronized (mutedSoundIds) {
+                    mutedSoundIds
+                        .computeIfAbsent(pool, unused -> ConcurrentHashMap.newKeySet())
+                        .add((Integer) result);
+                  }
                 }
                 return result;
               });
@@ -63,7 +74,34 @@ public class CameraShutterMuteHook implements BaseHook {
                   int.class,
                   int.class,
                   float.class))
-          .intercept(chain -> mutedSoundIds.contains((int) chain.getArg(0)) ? 0 : chain.proceed());
+          .intercept(
+              chain -> {
+                Set<Integer> muted = mutedSoundIds.get((SoundPool) chain.getThisObject());
+                return muted != null && muted.contains((int) chain.getArg(0)) ? 0 : chain.proceed();
+              });
+
+      Vector.module
+          .hook(Reflect.findMethodExact(SoundPool.class, "unload", int.class))
+          .intercept(
+              chain -> {
+                Object result = chain.proceed();
+                if (Boolean.TRUE.equals(result)) {
+                  Set<Integer> muted = mutedSoundIds.get((SoundPool) chain.getThisObject());
+                  if (muted != null) muted.remove((int) chain.getArg(0));
+                }
+                return result;
+              });
+
+      Vector.module
+          .hook(Reflect.findMethodExact(SoundPool.class, "release"))
+          .intercept(
+              chain -> {
+                try {
+                  return chain.proceed();
+                } finally {
+                  mutedSoundIds.remove((SoundPool) chain.getThisObject());
+                }
+              });
 
       Vector.module
           .hook(

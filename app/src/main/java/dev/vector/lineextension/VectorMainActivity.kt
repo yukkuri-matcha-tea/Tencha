@@ -81,6 +81,7 @@ class VectorMainActivity : ComponentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    dev.vector.lineextension.core.DevicePerformance.initialize(applicationContext)
     enableEdgeToEdge()
     setContent { VectorTheme { TenchaApp(resumeGeneration.intValue) } }
   }

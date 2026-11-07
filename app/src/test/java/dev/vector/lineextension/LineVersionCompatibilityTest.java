@@ -203,10 +203,65 @@ public class LineVersionCompatibilityTest {
   }
 
   @Test
+  public void callRestrictionBypassUsesOnlyVerified26151EntryPoints() {
+    LineVersion.Config c = LineVersion.resolveVersion("26.15.1", name -> false);
+    assertEquals("en1.q2", c.callRestrictions.voicePresenterClass);
+    assertEquals("jo1.p", c.callRestrictions.videoLauncherClass);
+    assertEquals("u81.a", c.callRestrictions.videoRequestClass);
+    assertEquals("ry0.h0", c.callRestrictions.cameraGateClass);
+    assertEquals("ti1.c", c.callRestrictions.chatCallStateClass);
+    assertEquals("ie2.g", c.camera.cameraModuleClass);
+    LineVersion.Config old = LineVersion.resolveVersion("26.15.0", name -> false);
+    assertEquals("", old.callRestrictions.voicePresenterClass);
+  }
+
+  @Test
   public void unknownVersionFailsClosedEvenWhenOldAnchorsExist() {
-    assertNull(LineVersion.resolveVersion("26.16.0", name -> true));
+    assertNull(LineVersion.resolveVersion("26.17.0", name -> true));
     assertEquals("unsupported", LineVersion.getCompatibilityState());
     assertEquals("", LineVersion.getResolvedVersionName());
+  }
+
+  @Test
+  public void line26160HasItsOwnVerifiedMappingsAndRemoteProfileWriteBarrier() {
+    LineVersion.Config c = LineVersion.resolveVersion("26.16.0", name -> false);
+    assertNotNull(c);
+    assertEquals("exact", LineVersion.getCompatibilityState());
+    assertEquals("26.16.0", LineVersion.getResolvedVersionName());
+    assertEquals("ji8.f", c.settings.settingsAdapterClass);
+    assertEquals("wk1.t0", c.chat.headerController);
+    assertEquals("hy1.v", c.chat.searchHeaderHelperClass);
+    assertEquals("qg3.e", c.readReceipt.readReceiptManagerClass);
+    assertEquals("uq8.k2", c.unsend.notifiedSendReactionHandlerClass);
+    assertEquals("wp8.d", c.unsend.appInfoProviderClass);
+    assertEquals("B7", c.profileViewer.methodSaveDecorations);
+    assertEquals("I7", c.profileViewer.methodSetEditMode);
+    assertEquals("t7", c.profileViewer.methodResetDecorations);
+    assertEquals("F7", c.profileViewer.methodSelectDecoration);
+    assertEquals("c", c.profileViewer.editorDeleteButtonField);
+    assertEquals("d", c.profileViewer.editorEditButtonField);
+    assertEquals("k0", c.profile.fieldH3);
+    assertEquals("w", c.callRestrictions.methodChatCallState);
+    assertEquals("w", c.callRestrictions.methodCameraCallState);
+    assertEquals("kq7.a", c.classAliases.get("so7.a"));
+    assertEquals("qz7.i", c.classAliases.get("ew7.i"));
+    assertEquals("h08.e", c.classAliases.get("vw7.e"));
+    assertEquals("hz.y0", c.notificationFix.firebaseQueueClass);
+    assertEquals("z60.a", c.nightMode.nightModeConfiguratorClass);
+    assertEquals("ih6.j", c.nightMode.darkThemeManagerClass);
+    assertEquals("A", c.nightMode.methodThemeMode);
+    assertEquals("a", c.unsend.itemViewField);
+    assertEquals("", c.unsend.methodGetItemView);
+    assertEquals("tq8.a$a$c", c.unsend.destroyResultClass);
+    assertEquals("r21.b", c.aiIcon.repoClass);
+    assertEquals("a", c.aiIcon.methodGetShownAfterMillis);
+    assertEquals("oy1.k", c.chat.searchResultTitleViewHolderClass);
+    assertEquals(0, c.res.idStatusBarGuide);
+    LineVersion.Config old = LineVersion.resolveVersion("26.15.1", name -> false);
+    assertEquals("z7", old.profileViewer.methodSaveDecorations);
+    assertEquals("b", old.profileViewer.editorDeleteButtonField);
+    assertEquals("il1.z0", old.chat.headerController);
+    assertEquals(0, old.classAliases.size());
   }
 
   @Test
@@ -217,10 +272,27 @@ public class LineVersionCompatibilityTest {
   }
 
   @Test
+  public void line26171ResolvesItsOwnHookFamiliesWithoutChangingThePreviousVersion() {
+    LineVersion.Config current =
+        LineVersion.resolveVersion("LINE/26.17.1 (261710173)", name -> false);
+    assertNotNull(current);
+    assertEquals("exact", LineVersion.getCompatibilityState());
+    assertEquals("26.17.1", LineVersion.getResolvedVersionName());
+    assertEquals("ji5.b", current.settings.settingsSearchHelperClass);
+    assertEquals("jr1.y", current.unsend.chatMessageViewHolderClass);
+    assertEquals("x18.i", current.classAliases.get("vw7.j"));
+    assertEquals("C7", current.profileViewer.methodSaveDecorations);
+    LineVersion.Config previous = LineVersion.resolveVersion("26.16.0", name -> false);
+    assertEquals("eh5.b", previous.settings.settingsSearchHelperClass);
+    assertEquals("B7", previous.profileViewer.methodSaveDecorations);
+    assertEquals("h08.j", previous.classAliases.get("vw7.j"));
+  }
+
+  @Test
   public void unknownVersionFailsClosedWithoutEnoughAnchors() {
     assertNull(
         LineVersion.resolveVersion(
-            "26.16.0", name -> "jp.naver.line.android.activity.main.MainActivity".equals(name)));
+            "26.17.0", name -> "jp.naver.line.android.activity.main.MainActivity".equals(name)));
     assertEquals("unsupported", LineVersion.getCompatibilityState());
     assertEquals("", LineVersion.getResolvedVersionName());
   }

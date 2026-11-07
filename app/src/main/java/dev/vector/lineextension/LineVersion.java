@@ -33,6 +33,9 @@ public class LineVersion {
   }
 
   public static class Config {
+    /** Explicit APK-verified aliases for legacy hardcoded hook parameter types. */
+    public final Map<String, String> classAliases = new HashMap<>();
+
     public String linePkg = "jp.naver.line.android";
 
     public Main main = new Main();
@@ -45,6 +48,7 @@ public class LineVersion {
     public Ads ads = new Ads();
     public Home home = new Home();
     public Chat chat = new Chat();
+    public CallRestrictions callRestrictions = new CallRestrictions();
     public Res res = new Res();
     public ReadReceipt readReceipt = new ReadReceipt();
     public ChatHeader chatHeader = new ChatHeader();
@@ -159,6 +163,8 @@ public class LineVersion {
       public String fieldParams = "";
       public String fieldTextParams = "";
       public String fieldText = "";
+      public String textParamsClass = "";
+      public String fieldSelectedView = "";
     }
 
     public static class Iab {
@@ -193,6 +199,7 @@ public class LineVersion {
       public String selectionValidatorParamClass = "";
       public String videoProfileTrimmerActivityClass = "";
       public String fieldVideoProfileTrimmerLimit = "";
+      public boolean keepNonDurationValidation;
     }
 
     public static class Profile {
@@ -221,6 +228,9 @@ public class LineVersion {
       public String editorRendererField = "";
       public String editorDecoViewModelField = "";
       public String editorSelectionFrameField = "F";
+      public String editorDeleteButtonField = "b";
+      public String editorEditButtonField = "c";
+      public String methodSelectDecoration = "D7";
       public String popupBindingField = "";
       public String popupWindowField = "";
       public String bindingRootField = "";
@@ -232,6 +242,17 @@ public class LineVersion {
       public String methodLoadImageIntoView = "S";
       public String methodOpenDecorationEditor = "";
       public String methodSaveDecorations = "";
+      public String saveDecorationsParamClass = "";
+    }
+
+    public static class CallRestrictions {
+      public String methodChatCallState = "c";
+      public String methodCameraCallState = "c";
+      public String voicePresenterClass = "";
+      public String videoLauncherClass = "";
+      public String videoRequestClass = "";
+      public String cameraGateClass = "";
+      public String chatCallStateClass = "";
     }
 
     public static class ProfileTimestamps {
@@ -359,6 +380,8 @@ public class LineVersion {
       public String methodOperationTypeValueOf = "";
       public int methodBindIndex = 0;
       public String methodGetItemView = "";
+      public String itemViewField = "";
+      public String destroyResultClass = "";
       public String methodGetCommonData = "";
       public int operationTypeDummy = 0;
 
@@ -623,6 +646,7 @@ public class LineVersion {
     public static class AiIcon {
       public String repoClass = "";
       public String methodGetShownAfterMillis = "";
+      public String rendererMethod = "";
     }
   }
 
@@ -651,6 +675,8 @@ public class LineVersion {
     VERSION_TABLE.put("26.14.0", dev.vector.lineextension.versions.Version26140.create());
     VERSION_TABLE.put("26.15.0", dev.vector.lineextension.versions.Version26150.create());
     VERSION_TABLE.put("26.15.1", dev.vector.lineextension.versions.Version26151.create());
+    VERSION_TABLE.put("26.16.0", dev.vector.lineextension.versions.Version26160.create());
+    VERSION_TABLE.put("26.17.1", dev.vector.lineextension.versions.Version26171.create());
   }
 
   private static volatile Config cachedConfig = null;

@@ -16,6 +16,7 @@ import dev.vector.lineextension.ui.EditHistoryViewer;
 import dev.vector.lineextension.utils.LineDBUtils;
 import dev.vector.lineextension.utils.ModuleStrings;
 import io.github.libxposed.api.XposedInterface;
+import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -132,20 +133,20 @@ public class EditHistoryHook implements BaseHook {
       Object item = enumConstant(Reflect.findClass(cfg.menuItemEnumClass, cl), PLACEHOLDER_ITEM);
       final Object placeholder = enumConstant(presentationEnum, PLACEHOLDER_ITEM);
       final Object action = buildAction(cl);
-
-      hookMenuList(cl, item);
+      Method label = Reflect.findMethodExact(presentationEnum, cfg.methodMenuLabel, Context.class);
+      Method icon = Reflect.findMethodExact(presentationEnum, cfg.methodMenuIcon);
+      Method buttonAction = Reflect.findMethodExact(presentationEnum, cfg.methodMenuActionAccessor);
 
       Vector.module
-          .hook(Reflect.findMethodExact(presentationEnum, cfg.methodMenuLabel, Context.class))
+          .hook(label)
           .intercept(chain -> forPlaceholder(chain, placeholder, ModuleStrings.EDIT_HISTORY_TITLE));
 
-      Vector.module
-          .hook(Reflect.findMethodExact(presentationEnum, cfg.methodMenuIcon))
-          .intercept(chain -> forPlaceholder(chain, placeholder, ICON_ID));
+      Vector.module.hook(icon).intercept(chain -> forPlaceholder(chain, placeholder, ICON_ID));
 
       Vector.module
-          .hook(Reflect.findMethodExact(presentationEnum, cfg.methodMenuActionAccessor))
+          .hook(buttonAction)
           .intercept(chain -> forPlaceholder(chain, placeholder, action));
+      hookMenuList(cl, item);
     } catch (Throwable t) {
       Vector.log("Tencha: edit history menu hook failed: " + t);
     }
@@ -325,6 +326,9 @@ public class EditHistoryHook implements BaseHook {
 
   private static Object kotlinUnit(ClassLoader cl) {
     try {
+      if (NativeCallBridge.uses2615CallApi()) {
+        return Reflect.getStaticObjectField(Reflect.findClass("ip8.i0", cl), "a");
+      }
       return Reflect.findClass("kotlin.Unit", cl).getField("INSTANCE").get(null);
     } catch (Throwable t) {
       return null;

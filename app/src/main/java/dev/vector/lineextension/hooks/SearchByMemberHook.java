@@ -174,7 +174,7 @@ public class SearchByMemberHook implements BaseHook {
   }
 
   private void reapplyActiveFilterOnOpen(Activity activity, LineVersion.Config config) {
-    String chatId = resolveChatId(activity, config);
+    String chatId = ChatHistoryRequest.resolveChatId(activity, config);
     if (chatId == null || !chatMemberFilter.containsKey(chatId)) return;
     EditText et = getSearchEditText(activity);
     if (et == null) return;
@@ -225,7 +225,7 @@ public class SearchByMemberHook implements BaseHook {
   private void onMemberIconClicked(Activity activity, LineVersion.Config config, ImageView icon) {
     dismissTooltip(true);
     try {
-      String chatId = resolveChatId(activity, config);
+      String chatId = ChatHistoryRequest.resolveChatId(activity, config);
       if (chatId == null || chatId.isEmpty()) return;
 
       if (chatMemberFilter.containsKey(chatId)) {
@@ -244,7 +244,7 @@ public class SearchByMemberHook implements BaseHook {
   }
 
   private void updateIconVisualState(Activity activity, LineVersion.Config config, ImageView icon) {
-    String chatId = resolveChatId(activity, config);
+    String chatId = ChatHistoryRequest.resolveChatId(activity, config);
     if (chatId == null || !chatMemberFilter.containsKey(chatId)) return;
     tintFilterActive(icon);
     String name = chatMemberFilterName.get(chatId);
@@ -593,7 +593,7 @@ public class SearchByMemberHook implements BaseHook {
           @Override
           public void afterTextChanged(android.text.Editable s) {
             if (s.length() != 0) return;
-            String chatId = resolveChatId(activity, config);
+            String chatId = ChatHistoryRequest.resolveChatId(activity, config);
             if (chatId != null && chatMemberFilter.containsKey(chatId))
               triggerReSearch(activity, chatId);
           }
@@ -847,32 +847,6 @@ public class SearchByMemberHook implements BaseHook {
     while (ctx instanceof ContextWrapper) {
       if (ctx instanceof Activity) return (Activity) ctx;
       ctx = ((ContextWrapper) ctx).getBaseContext();
-    }
-    return null;
-  }
-
-  private String resolveChatId(Activity activity, LineVersion.Config config) {
-    try {
-      android.os.Bundle extras = activity.getIntent().getExtras();
-      if (extras != null) {
-        android.os.Parcelable req = extras.getParcelable("chat-history-request");
-        if (req != null) {
-          Object id = Reflect.callMethod(req, "getChatId");
-          if (id instanceof String && !((String) id).isEmpty()) return (String) id;
-        }
-      }
-    } catch (Throwable ignored) {
-    }
-    for (String key : new String[] {"chatId", "chat_id", "extra-chat-id"}) {
-      String id = activity.getIntent().getStringExtra(key);
-      if (id != null && !id.isEmpty()) return id;
-    }
-    if (config != null) {
-      try {
-        Object field = Reflect.getObjectField(activity, config.chat.chatIdField);
-        if (field != null) return (String) Reflect.callMethod(field, config.chat.methodGetChatId);
-      } catch (Throwable ignored) {
-      }
     }
     return null;
   }

@@ -1,0 +1,171 @@
+package dev.vector.lineextension.versions;
+
+import dev.vector.lineextension.LineVersion;
+
+/** Dedicated LINE 26.16.0 (261600106) mappings from the installed APK. */
+public final class Version26160 {
+  private Version26160() {}
+
+  public static LineVersion.Config create() {
+    LineVersion.Config v = Version26151.create();
+    v.profileViewer.editorDeleteButtonField = "c";
+    v.profileViewer.editorEditButtonField = "d";
+    v.profileViewer.methodSelectDecoration = "F7";
+    v.callRestrictions.methodChatCallState = "w";
+    v.callRestrictions.methodCameraCallState = "w";
+    v.camera.methodUseExternalCamera = "c";
+    v.profile.fieldH3 = "k0";
+    v.compose.methodCoordinatesSize = "b";
+    v.nightMode.nightModeConfiguratorClass = "z60.a";
+    // ih6.j.A returns ThemeManager.Mode (LIGHT/DARK); the inherited j/t mappings were unrelated DB
+    // code.
+    v.nightMode.darkThemeManagerClass = "ih6.j";
+    v.nightMode.methodIsDarkTheme = "";
+    v.nightMode.methodThemeMode = "A";
+    v.plusMenu.methodCreateMenu = "b";
+    // LegacyTalkServiceClientImpl.c1 constructs $e, whose protocol method is sendChatChecked.
+    v.thrift.v1 = "c1";
+    v.main.headerButtonTypeClass = "cm8.d";
+    v.settings.settingsAdapterClass = "ji8.f";
+    v.settings.settingsItemClass = "ji8.f$c";
+    v.settings.settingsBaseAdapterClass = "ji8.f$b";
+    v.settings.settingsSearchHelperClass = "eh5.b";
+    v.settings.settingsAdapterWrapperClass = "dc5.a";
+    v.settings.settingsHeaderItemClass = "ec5.w";
+    v.settings.settingsRowItemClass = "ec5.b0";
+    v.settings.settingsHandlerBaseClass = "ec5.l0";
+    v.plusMenu.plusMenuComponentClass = "q61.n";
+    v.plusMenu.plusMenuComposerImplClass = "j3.d1";
+    v.plusMenu.plusMenuCallbackClass = "nt8.a";
+    v.plusMenu.plusMenuOnClickItemClass = "nt8.l";
+    v.unsend.notifiedReadMessageHandlerClass = "uq8.z1";
+    v.unsend.notifiedSendReactionHandlerClass = "uq8.k2";
+    v.unsend.notifiedDestroyMessageHandlerClass = "uq8.z0";
+    v.unsend.chatMessageViewHolderClass = "lq1.x";
+    v.unsend.chatServiceConfigClass = "ya5.u";
+    v.unsend.unsendDestroyHandlerClass = "uq8.z0";
+    v.unsend.operationClass = "ts8.de";
+    // RecyclerView.e0 no longer exposes a0(); its public final a is itemView.
+    v.unsend.itemViewField = "a";
+    v.unsend.methodGetItemView = "";
+    // uq8.z0.b returns a handled result after processing NOTIFIED_DESTROY_MESSAGE.
+    v.unsend.destroyResultClass = "tq8.a$a$c";
+    v.chat.headerController = "wk1.t0";
+    v.chatHeader.fieldChatConfigChatId = "dg1.a";
+    v.chatHeader.fieldChatConfigIsMuted = "bg1.a";
+    v.chatHeader.fieldChatConfigType = "wk1.k0";
+    v.chatHeader.fieldAppInfoPkg = "fc1.a";
+    v.chatHeader.fieldAppInfoId = "rw0.d";
+    v.notificationFix.lineFcmServiceBaseClass = "hz.i";
+    v.notificationFix.firebaseRemoteMessageClass = "hz.t0";
+    v.notificationFix.firebaseReceiverEnvelopeClass = "cr.a";
+    v.notificationFix.firebaseDispatcherClass = "hz.n";
+    v.notificationFix.firebaseBindDeliveryClass = "hz.o1";
+    v.notificationFix.firebaseWakefulStartClass = "hz.j1";
+    v.notificationFix.firebaseCompletedTaskClass = "pt.n";
+    v.notificationFix.firebaseAppClass = "tx.e";
+    v.notificationFix.legyDisconnectRunnableClass = "ta0.h";
+    v.notificationFix.fisCertDigestClass = "or.a";
+    v.notificationFix.gmsSignatureCheckClass = "dr.k";
+    v.notificationFix.gmsAvailabilityClass = "dr.j";
+    v.talkTabHeader.chatTabHeaderStateClass = "d52.f";
+    v.talkTabHeader.iconTypeClass = "o61.n";
+    v.searchBarAgentI.homeSearchBarClass = "d95.j";
+    v.home26NavIcon.rendererClass = "fm2.n";
+    v.compose.composerClass = "j3.r";
+    v.compose.clickableClass = "u1.m0";
+    v.compose.onGloballyPositionedClass = "z4.x1";
+    v.compose.layoutCoordinatesClass = "z4.b0";
+    v.agentIInChat.toggleComposableClass = "vn1.h";
+    // r21.b.a reads CHATROOM_AI_BUTTON_SHOWN_AFTER_MILLIS; o21.b is a click listener.
+    v.aiIcon.repoClass = "r21.b";
+    v.aiIcon.methodGetShownAfterMillis = "a";
+    v.imageQuality.qualityProfileHighClass = "jq8.a$b$a";
+    v.imageQuality.qualityProfileMediumClass = "jq8.a$b$b";
+    v.imageQuality.imageUtilClass = "jp.naver.line.android.util.g1";
+    v.profile.h13baClass = "ap3.b";
+    v.media.videoDurationCheckClass = "rf1.b";
+    v.media.droppedMediaPreprocessorClass = "e31.b";
+    v.media.videoDurationSuccessClass = "sf1.a$c";
+    v.media.galleryViewClass = "hp1.c0";
+    v.chat.searchHeaderHelperClass = "hy1.v";
+    v.chat.searchPresenterClass = "ly1.o";
+    v.chat.searchKeywordTypeClass = "ia1.c";
+    v.chat.searchResultClass = "ia1.h";
+    v.chat.searchResultWrapperClass = "ia1.i";
+    v.chat.searchKeywordEventClass = "gy1.b";
+    // oy1.k.H0(fa1.c, fa1.e$a, Z, Z) renders fa1.c$e and caps its count at 500+.
+    v.chat.searchResultTitleViewHolderClass = "oy1.k";
+    v.announcementFix.formatterClass = "ss1.a";
+    v.announcementFix.announcementEventClass = "y81.g$d0";
+    v.chatTimestamp.displayTimeInterface = "he1.f";
+    v.chatEditSelectAll.selectionProviderClass = "zd1.c";
+    v.chatEditSelectAll.selectionStateClass = "zd1.d";
+    v.messageEditHistory.editRequestClass = "yk8.h";
+    v.messageEditHistory.menuListBuilderClass = "fm1.f2";
+    v.messageEditHistory.menuItemEnumClass = "xc1.c";
+    v.messageEditHistory.menuPresentationEnumClass = "fm1.d1";
+    v.messageEditHistory.menuActionLambdaClass = "wc1.f$b";
+    v.camera.cameraModuleClass = "ae2.j";
+    v.homeTab.tabListProviderClass = "x78.e";
+    v.messageContextMenu.dialogClass = "fm1.o1";
+    v.messageContextMenu.showCoroutineClass = "fm1.q1";
+    v.callTts.receiveProcessorClass = "uq8.z2";
+    v.callTts.sendProcessorClass = "uq8.y3";
+    v.callTts.messageClass = "ts8.od";
+    v.profileViewer.decoControllerClass = "iu6.m";
+    v.profileViewer.decoEditorControllerClass = "iu6.t0";
+    v.profileViewer.popupClass = "pu6.b";
+    v.profileViewer.analyticsClass = "cv6.c";
+    v.callRestrictions.voicePresenterClass = "sm1.h2";
+    v.callRestrictions.videoLauncherClass = "zn1.p";
+    v.callRestrictions.videoRequestClass = "i81.a";
+    v.callRestrictions.cameraGateClass = "ny0.c0";
+    v.callRestrictions.chatCallStateClass = "hi1.b";
+    v.profileViewer.mediaValueClass = "xu6.y$e";
+    v.notificationFix.firebaseQueueClass = "hz.y0";
+    v.readReceipt.readReceiptManagerClass = "qg3.e";
+    v.unsend.appInfoProviderClass = "wp8.d";
+    v.chatEditSelectAll.methodGetSelectionState = "n";
+    v.chatEditSelectAll.methodGetItem = "q";
+    v.chatEditSelectAll.methodToggleItem = "k";
+    v.chatEditSelectAll.methodIsItemSelected = "l";
+    v.profileViewer.methodSetEditMode = "I7";
+    v.profileViewer.methodResetDecorations = "t7";
+    v.profileViewer.methodSelectedDecoration = "v7";
+    v.profileViewer.methodSaveDecorations = "B7";
+    v.res.idSettingList = 0x7f0b2276;
+    v.res.idPersonalInfo = 0x7f153aa6;
+    v.res.typeSection = 0x7f0e0531;
+    v.res.typeRow = 0x7f0e0534;
+    v.res.idIcon = 0x7f0b2267;
+    v.res.idDesc = 0x7f0b2259;
+    v.res.idMark = 0x7f0b227a;
+    v.res.idSeparator = 0x7f0b22a3;
+    v.res.idArrow = 0x7f0b2241;
+    v.res.idNewMark = 0x7f0b18e3;
+    v.res.idNoticeDot = 0x7f0b1952;
+    v.res.idTitle = 0x7f0b22ac;
+    v.res.layoutCheckbox = 0x7f0e0525;
+    v.res.layoutSectionHeader = 0x7f0e0531;
+    v.res.layoutSettingsMain = 0x7f0e052b;
+    v.res.idHeader = 0x7f0b10f8;
+    v.res.idStatusBarGuide = 0x0;
+    v.res.idTimestamp = 0x7f0b0864;
+    v.searchBarAgentI.homeAiContainerId = 0x7f0b1627;
+    v.searchBarAgentI.homeGuidelineId = 0x7f0b1629;
+    v.home26NavIcon.agentDrawableId = 0x7f080b92;
+    v.home26NavIcon.settingsDrawableId = 0x7f081291;
+    v.classAliases.put("vw7.j", "h08.j");
+    v.classAliases.put("xp7.j", "pr7.i");
+    v.classAliases.put("ps7.a$a$a", "rv7.a$a$a");
+    v.classAliases.put("ps7.a$b$a", "rv7.a$b$a");
+    v.classAliases.put("ps7.a$b$b", "rv7.a$b$b");
+    v.classAliases.put("ew7.i", "qz7.i");
+    v.classAliases.put("ip8.i0", "vs8.i0");
+    v.classAliases.put("ps7.a$a$b", "rv7.a$a$b");
+    v.classAliases.put("so7.a", "kq7.a");
+    v.classAliases.put("vw7.e", "h08.e");
+    return v;
+  }
+}

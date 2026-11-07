@@ -212,7 +212,10 @@ public class SettingsButtonLongPress implements BaseHook {
           findMethod(
               Reflect.findClass(cfg.compose.onGloballyPositionedClass, lpparam.classLoader),
               cfg.compose.methodOnGloballyPositioned,
-              params -> params.length == 2 && params[1] == combinedClickable.getReturnType());
+              params ->
+                  params.length == 2
+                      && (params[0] == combinedClickable.getReturnType()
+                          || params[1] == combinedClickable.getReturnType()));
     } catch (Throwable t) {
       Vector.log(
           "Tencha: SettingsButtonLongPress could not resolve the layout coordinate API: " + t);
@@ -299,7 +302,11 @@ public class SettingsButtonLongPress implements BaseHook {
     Method factory = onGloballyPositioned;
     if (factory == null) return modifier;
     try {
-      return factory.invoke(null, positionCallback(factory.getParameterTypes()[0]), modifier);
+      Class<?>[] parameters = factory.getParameterTypes();
+      if (parameters[0] == factory.getReturnType()) {
+        return factory.invoke(null, modifier, positionCallback(parameters[1]));
+      }
+      return factory.invoke(null, positionCallback(parameters[0]), modifier);
     } catch (Throwable t) {
       Vector.log("Tencha: SettingsButtonLongPress could not track the settings icon bounds: " + t);
       return modifier;

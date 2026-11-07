@@ -39,6 +39,8 @@ public final class Reflect {
   }
 
   public static Class<?> findClass(String className, ClassLoader cl) {
+    LineVersion.Config version = LineVersion.get();
+    if (version != null) className = version.classAliases.getOrDefault(className, className);
     Map<String, Object> bucket =
         CLASS_CACHE.computeIfAbsent(cl == null ? NULL_CL : cl, k -> new ConcurrentHashMap<>());
     Object cached = bucket.get(className);

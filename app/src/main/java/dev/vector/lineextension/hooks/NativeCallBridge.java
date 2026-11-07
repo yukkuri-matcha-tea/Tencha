@@ -26,8 +26,15 @@ final class NativeCallBridge {
   }
 
   static boolean uses2615CallApi(String version) {
-    // 26.15.1 libandromeda.so is SHA-256 identical to the verified 26.15.0 binary.
-    return "26.15.0".equals(version) || "26.15.1".equals(version);
+    // The arm64 library is SHA-256 identical across these builds. Java hooks use separate mappings.
+    return "26.15.0".equals(version)
+        || "26.15.1".equals(version)
+        || "26.16.0".equals(version)
+        || "26.17.1".equals(version);
+  }
+
+  static boolean isLine26171() {
+    return "26.17.1".equals(LineVersion.getResolvedVersionName());
   }
 
   static synchronized boolean ensureLoaded(Context context) {

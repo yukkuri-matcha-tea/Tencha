@@ -35,12 +35,15 @@ public final class Vector {
   }
 
   public static void hookAll(Class<?> clazz, String name, Hooker hooker) {
+    int count = 0;
     for (Method m : clazz.getDeclaredMethods()) {
       if (m.getName().equals(name)) {
         m.setAccessible(true);
         module.hook(m).intercept(hooker);
+        count++;
       }
     }
+    if (count == 0) throw new NoSuchMethodError(clazz.getName() + "#" + name);
   }
 
   public static void hookAllCtors(Class<?> clazz, Hooker hooker) {

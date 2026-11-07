@@ -261,14 +261,10 @@ public class ReadHistoryViewer {
   }
 
   private static void clearChatHistory(String chatId) {
-    try {
-      JSONObject historyJson = SettingsStore.loadReadHistory();
-      JSONObject chats = historyJson.optJSONObject("c");
-      if (chats != null && chats.has(chatId)) {
-        chats.remove(chatId);
-        SettingsStore.saveReadHistory(historyJson);
-      }
-    } catch (Exception e) {
-    }
+    SettingsStore.updateReadHistory(
+        history -> {
+          JSONObject chats = history.optJSONObject("c");
+          return chats != null && chats.remove(chatId) != null;
+        });
   }
 }

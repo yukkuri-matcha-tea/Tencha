@@ -55,6 +55,7 @@ import java.util.Set;
 public class SettingsUIInjector implements BaseHook {
 
   private static final String BRAND_TAG = "Tencha";
+  private static final Object DEVELOPER_GROUP_TAG = new Object();
   private static final int PICK_FONT_CODE = 0x4C59;
   private static final int PICK_RESTORE_DB_CODE = 0x4C5A;
   private static final int EXPORT_CHAT_BACKUP_CODE = 0x4C5B;
@@ -264,17 +265,20 @@ public class SettingsUIInjector implements BaseHook {
     }
     LineVersion.Config c = LineVersion.get();
     int currentPos = (int) chain.getArg(1);
-    boolean originalBound = false;
+    boolean isSection;
+    boolean isRow;
     try {
       Object currentItem =
           Reflect.callMethod(chain.getThisObject(), c.settings.methodGetItem, currentPos);
-      if (currentItem == null) return chain.proceed();
-      boolean isSection = injectedSectionItems.contains(currentItem);
-      boolean isRow = injectedRowItems.contains(currentItem);
-      if (!isSection && !isRow) return chain.proceed();
-
-      Object result = chain.proceed();
-      originalBound = true;
+      isSection = injectedSectionItems.contains(currentItem);
+      isRow = injectedRowItems.contains(currentItem);
+    } catch (Throwable t) {
+      Vector.log("Tencha: Settings row lookup failed: " + t);
+      return chain.proceed();
+    }
+    Object result = chain.proceed();
+    if (!isSection && !isRow) return result;
+    try {
       View itemView =
           (View) Reflect.getObjectField(chain.getArg(0), c.settings.fieldViewHolderView);
       if (isSection) {
@@ -282,11 +286,10 @@ public class SettingsUIInjector implements BaseHook {
       } else {
         bindVectorSettingsRow(itemView, c);
       }
-      return result;
     } catch (Throwable t) {
       Vector.log("Tencha: Settings row binding failed: " + t);
     }
-    return originalBound ? null : chain.proceed();
+    return result;
   }
 
   private void bindVectorSettingsSection(View itemView, LineVersion.Config c) {
@@ -465,7 +468,11 @@ public class SettingsUIInjector implements BaseHook {
               try {
                 SoundboardStore.Clip clip = SoundboardStore.importAudio(host, source);
                 host.runOnUiThread(
-                    () -> Toast.makeText(host, clip.name + " を追加しました", Toast.LENGTH_SHORT).show());
+                    () -> {
+                      if (host.isFinishing() || host.isDestroyed()) return;
+                      Toast.makeText(host, clip.name + " を追加しました", Toast.LENGTH_SHORT).show();
+                      if (onSettingsReloadRequest != null) onSettingsReloadRequest.run();
+                    });
               } catch (Throwable error) {
                 Vector.log("Tencha: soundboard import failed: " + error);
                 host.runOnUiThread(
@@ -968,7 +975,7 @@ public class SettingsUIInjector implements BaseHook {
   }
 
   private void tagLastChild(LinearLayout parent, String text) {
-    parent.getChildAt(parent.getChildCount() - 1).setTag(text.toLowerCase());
+    parent.getChildAt(parent.getChildCount() - 1).setTag(SettingsSearch.normalize(text));
   }
 
   private void injectItemRow(
@@ -1042,7 +1049,7 @@ public class SettingsUIInjector implements BaseHook {
       updateUI.run();
 
       row.setOnClickListener(v -> toggleItem(v, i, currentCfg));
-      row.setTag((i.label + " " + i.description).toLowerCase());
+      row.setTag(SettingsSearch.normalize(i.label + " " + i.description));
       parent.addView(row);
     } catch (Throwable ignored) {
     }
@@ -1053,7 +1060,7 @@ public class SettingsUIInjector implements BaseHook {
     View row =
         injectInfoRow(
             infl, parent, ctx, i.label, i.description, true, null, v -> openFontPicker(ctx));
-    if (row != null) row.setTag((i.label + " " + i.description).toLowerCase());
+    if (row != null) row.setTag(SettingsSearch.normalize(i.label + " " + i.description));
   }
 
   private void injectHomeTypeRow(
@@ -1062,7 +1069,7 @@ public class SettingsUIInjector implements BaseHook {
         injectInfoRow(
             infl, parent, ctx, i.label, i.description, true, null, v -> openHomeTypePicker(ctx, i));
     if (row != null) {
-      row.setTag((i.label + " " + i.description).toLowerCase());
+      row.setTag(SettingsSearch.normalize(i.label + " " + i.description));
       String current = SettingsStore.getString(i.key, "");
       LineTheme.setRowValue(row, current.isEmpty() ? ModuleStrings.HOME_TYPE_DEFAULT : current);
     }
@@ -1081,7 +1088,7 @@ public class SettingsUIInjector implements BaseHook {
             null,
             v -> openFcmFixModePicker(ctx, i));
     if (row != null) {
-      row.setTag((i.label + " " + i.description).toLowerCase());
+      row.setTag(SettingsSearch.normalize(i.label + " " + i.description));
       LineTheme.setRowValue(row, SettingsStore.getString(i.key, ModuleStrings.FCM_FIX_MODE_LEGY));
     }
   }
@@ -1114,7 +1121,7 @@ public class SettingsUIInjector implements BaseHook {
                   .show();
             });
     if (row != null) {
-      row.setTag((i.label + " " + i.description).toLowerCase());
+      row.setTag(SettingsSearch.normalize(i.label + " " + i.description));
     }
   }
 
@@ -1241,6 +1248,9 @@ public class SettingsUIInjector implements BaseHook {
     for (Runnable r : uiUpdateCallbacks) r.run();
     pendingRestart = true;
     cachedSearchView = null;
+    if ("developer_mode".equals(i.key) && onSettingsReloadRequest != null) {
+      onSettingsReloadRequest.run();
+    }
   }
 
   private void injectCategoryRow(
@@ -1261,7 +1271,7 @@ public class SettingsUIInjector implements BaseHook {
               true,
               null,
               v -> switchPage(ctx, toggleType, statusEnum, category));
-      if (cRow != null) cRow.setTag(category.label.toLowerCase());
+      if (cRow != null) cRow.setTag(SettingsSearch.normalize(category.label));
     } catch (Throwable ignored) {
     }
   }
@@ -1278,6 +1288,7 @@ public class SettingsUIInjector implements BaseHook {
     if (category == VectorConfig.Category.DEVELOPER) {
       developerItems = new LinearLayout(ctx);
       developerItems.setOrientation(LinearLayout.VERTICAL);
+      developerItems.setTag(DEVELOPER_GROUP_TAG);
       developerItems.setVisibility(
           SettingsStore.get("developer_mode", false) ? View.VISIBLE : View.GONE);
     }
@@ -1443,14 +1454,31 @@ public class SettingsUIInjector implements BaseHook {
 
     if (list == null) return;
 
+    filterSettingsGroup(list, SettingsSearch.normalize(query));
+  }
+
+  private int filterSettingsGroup(ViewGroup list, String query) {
     boolean isSearching = query.length() > 0;
     int childCount = list.getChildCount();
     View lastHeader = null;
     int itemsInCurrentSection = 0;
+    int totalMatches = 0;
 
     for (int i = 0; i < childCount; i++) {
       View child = list.getChildAt(i);
       Object tag = child.getTag();
+
+      if (tag == DEVELOPER_GROUP_TAG && child instanceof ViewGroup) {
+        boolean enabled = SettingsStore.get("developer_mode", false);
+        int matches = enabled ? filterSettingsGroup((ViewGroup) child, query) : 0;
+        child.setVisibility(
+            SettingsSearch.showDeveloperGroup(enabled, isSearching, matches)
+                ? View.VISIBLE
+                : View.GONE);
+        itemsInCurrentSection += matches;
+        totalMatches += matches;
+        continue;
+      }
 
       if (tag instanceof String && ((String) tag).equals("section_header")) {
         if (lastHeader != null) {
@@ -1464,14 +1492,17 @@ public class SettingsUIInjector implements BaseHook {
 
       if (!isSearching) {
         child.setVisibility(View.VISIBLE);
+        totalMatches++;
+        itemsInCurrentSection++;
         continue;
       }
 
       if (tag instanceof String) {
         String searchable = (String) tag;
-        if (searchable.contains(query)) {
+        if (SettingsSearch.matches(searchable, query)) {
           child.setVisibility(View.VISIBLE);
           itemsInCurrentSection++;
+          totalMatches++;
         } else {
           child.setVisibility(View.GONE);
         }
@@ -1482,6 +1513,7 @@ public class SettingsUIInjector implements BaseHook {
       lastHeader.setVisibility(
           itemsInCurrentSection > 0 || !isSearching ? View.VISIBLE : View.GONE);
     }
+    return totalMatches;
   }
 
   private void injectResetRow(
@@ -2020,7 +2052,7 @@ public class SettingsUIInjector implements BaseHook {
 
           @Override
           public void onTextChanged(CharSequence s, int start, int before, int count) {
-            String query = s.toString().toLowerCase();
+            String query = SettingsSearch.normalize(s.toString());
             clearButton.setVisibility(query.length() > 0 ? View.VISIBLE : View.GONE);
             applySearchQuery(ctx, query, toggleType, statusEnum);
           }
@@ -2067,7 +2099,7 @@ public class SettingsUIInjector implements BaseHook {
         () -> {
           cachedSearchView = null;
           itemHost.removeAllViews();
-          String query = searchBox.getText().toString().toLowerCase();
+          String query = SettingsSearch.normalize(searchBox.getText().toString());
           boolean isSearching = query.length() > 0;
           View newList =
               renderSettingsItems(ctx, toggleType, statusEnum, currentActiveCategory, isSearching);

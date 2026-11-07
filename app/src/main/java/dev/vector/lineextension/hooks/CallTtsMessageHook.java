@@ -54,9 +54,7 @@ public final class CallTtsMessageHook implements BaseHook {
           chain -> {
             Object result = chain.proceed();
             try {
-              Object model = Reflect.getObjectField(chain.getThisObject(), "l");
-              Object connect = Reflect.getObjectField(model, "j");
-              CallTtsManager.setCallGroupChatId((String) Reflect.callMethod(connect, "q"));
+              captureGroupChatId(chain.getThisObject());
             } catch (Throwable error) {
               CallTtsManager.setCallGroupChatId(null);
               Vector.log("Tencha: TTS call group unavailable", error);
@@ -66,6 +64,14 @@ public final class CallTtsMessageHook implements BaseHook {
     } catch (Throwable error) {
       Vector.log("Tencha: TTS group context hook unavailable", error);
     }
+  }
+
+  static void captureGroupChatId(Object session) {
+    Object model = Reflect.getObjectField(session, "l");
+    Object connect = Reflect.getObjectField(model, "j");
+    // The connect info returns the conversation ID. The model's name fields are display labels.
+    String idMethod = NativeCallBridge.isLine26171() ? "s" : "q";
+    CallTtsManager.setCallGroupChatId((String) Reflect.callMethod(connect, idMethod));
   }
 
   /**

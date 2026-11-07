@@ -49,6 +49,7 @@ final class CallTtsManager {
   private static File activeFile;
   private static String activeUtterance;
   private static String activeOutput;
+  private static Runnable utteranceTimeout;
   private static String selfDisplayName;
   private static String callGroupChatId;
 
@@ -324,7 +325,7 @@ final class CallTtsManager {
   }
 
   private static void drainLocked() {
-    if (busy || !callActive || !sessionEnabled) return;
+    if (busy || !callActive || !sessionEnabled || queue.isEmpty()) return;
     prepareTtsLocked();
     if (!ttsReady || tts == null) return;
     Entry entry;
@@ -334,20 +335,28 @@ final class CallTtsManager {
     if (entry == null) return;
 
     busy = true;
-    activeUtterance = "tencha-tts-" + UUID.randomUUID();
+    String utteranceId = "tencha-tts-" + UUID.randomUUID();
+    activeUtterance = utteranceId;
     activeOutput = CallTtsSettings.output();
+    utteranceTimeout = () -> recoverTimedOutUtterance(utteranceId);
+    MAIN.postDelayed(utteranceTimeout, 30_000L + 300L * entry.text.length());
     Bundle params = new Bundle();
     int result;
-    if (CallTtsSettings.OUTPUT_LOCAL.equals(activeOutput)) {
-      result = tts.speak(entry.text, TextToSpeech.QUEUE_FLUSH, params, activeUtterance);
-    } else {
-      File directory = new File(context.getCacheDir(), "tencha_tts");
-      if (!directory.isDirectory()) directory.mkdirs();
-      activeFile = new File(directory, activeUtterance + ".wav");
-      result = tts.synthesizeToFile(entry.text, params, activeFile, activeUtterance);
+    try {
+      if (CallTtsSettings.OUTPUT_LOCAL.equals(activeOutput)) {
+        result = tts.speak(entry.text, TextToSpeech.QUEUE_FLUSH, params, utteranceId);
+      } else {
+        File directory = new File(context.getCacheDir(), "tencha_tts");
+        if (!directory.isDirectory()) directory.mkdirs();
+        activeFile = new File(directory, utteranceId + ".wav");
+        result = tts.synthesizeToFile(entry.text, params, activeFile, utteranceId);
+      }
+    } catch (RuntimeException error) {
+      Log.w("TenchaCall", "TTS request failed", error);
+      result = TextToSpeech.ERROR;
     }
     Log.i("TenchaCall", "TTS request submitted: output=" + activeOutput + ", result=" + result);
-    if (result == TextToSpeech.ERROR) finishUtterance(activeUtterance);
+    if (result == TextToSpeech.ERROR) finishUtterance(utteranceId);
   }
 
   private static void handleDone(String utteranceId) {
@@ -392,10 +401,26 @@ final class CallTtsManager {
   private static void finishUtterance(String utteranceId) {
     synchronized (LOCK) {
       if (utteranceId == null || !utteranceId.equals(activeUtterance)) return;
-      deleteActiveFileLocked();
-      activeUtterance = null;
-      activeOutput = null;
-      busy = false;
+      clearActiveUtteranceLocked();
+      drainLocked();
+    }
+  }
+
+  private static void recoverTimedOutUtterance(String utteranceId) {
+    synchronized (LOCK) {
+      if (!utteranceId.equals(activeUtterance)) return;
+      Log.w("TenchaCall", "TTS timed out; reconnecting on the next request");
+      clearActiveUtteranceLocked();
+      TextToSpeech engine = tts;
+      tts = null;
+      ttsReady = false;
+      if (engine != null) {
+        try {
+          engine.shutdown();
+        } catch (RuntimeException error) {
+          Log.w("TenchaCall", "Unable to release timed-out TTS engine", error);
+        }
+      }
       drainLocked();
     }
   }
@@ -405,10 +430,7 @@ final class CallTtsManager {
     queue.clear();
     seenIds.clear();
     observedPeople.clear();
-    busy = false;
-    activeUtterance = null;
-    activeOutput = null;
-    deleteActiveFileLocked();
+    clearActiveUtteranceLocked();
     NativeCallBridge.clearTts();
     CallTtsLocalPlayer.clear();
     if (tts != null) {
@@ -431,7 +453,12 @@ final class CallTtsManager {
     if (files != null) for (File file : files) file.delete();
   }
 
-  private static void deleteActiveFileLocked() {
+  private static void clearActiveUtteranceLocked() {
+    if (utteranceTimeout != null) MAIN.removeCallbacks(utteranceTimeout);
+    utteranceTimeout = null;
+    activeUtterance = null;
+    activeOutput = null;
+    busy = false;
     if (activeFile != null) activeFile.delete();
     activeFile = null;
   }
