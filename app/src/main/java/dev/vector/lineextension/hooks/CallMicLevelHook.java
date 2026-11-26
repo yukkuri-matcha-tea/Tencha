@@ -716,14 +716,16 @@ public final class CallMicLevelHook implements BaseHook {
     if (!Main.options.independentCallMute.enabled) return;
     try {
       Class<?> session = Reflect.findClass(NATIVE_SESSION, loader);
+      boolean line26182 = NativeCallBridge.isLine26182();
       boolean line26171 = NativeCallBridge.isLine26171();
       boolean line26160 = "26.16.0".equals(LineVersion.getResolvedVersionName());
-      String streamMuteMethod = line26171 ? "V" : line26160 ? "t" : "o";
-      String sessionReleaseMethod = line26171 ? "T0" : line26160 ? "o0" : "g0";
-      String controlMuteMethod = line26171 || line26160 ? "j1" : "h1";
+      String streamMuteMethod = line26182 ? "x" : line26171 ? "V" : line26160 ? "t" : "o";
+      String sessionReleaseMethod = line26182 ? "I0" : line26171 ? "T0" : line26160 ? "o0" : "g0";
+      String controlMuteMethod = line26182 ? "i1" : line26171 || line26160 ? "j1" : "h1";
       Method sessionGetter =
           isLine26150()
-              ? Reflect.findMethodExact(audioControl, line26171 || line26160 ? "d1" : "b1")
+              ? Reflect.findMethodExact(
+                  audioControl, line26182 || line26171 || line26160 ? "d1" : "b1")
               : null;
       Method streamMute =
           Reflect.findMethodExact(session, streamMuteMethod, int.class, long.class, boolean.class);
@@ -838,9 +840,10 @@ public final class CallMicLevelHook implements BaseHook {
       String settingsProviderName = line26150 ? "vw7.j" : "xp7.j";
       boolean line26160 = "26.16.0".equals(LineVersion.getResolvedVersionName());
       boolean line26171 = NativeCallBridge.isLine26171();
-      String settingsItemsMethod = line26160 ? "x" : (line26150 ? "v" : "u");
-      String titleMethod = line26150 && !line26160 ? "g" : "d";
-      String enabledMethod = line26150 && !line26171 ? "j" : "h";
+      boolean line26182 = NativeCallBridge.isLine26182();
+      String settingsItemsMethod = line26160 || line26182 ? "x" : (line26150 ? "v" : "u");
+      String titleMethod = line26150 && !line26160 && !line26182 ? "g" : "d";
+      String enabledMethod = line26150 && !line26171 && !line26182 ? "j" : "h";
       Class<?> itemInterface = Reflect.findClass(itemInterfaceName, classLoader);
       Class<?> liveData = Reflect.findClass("androidx.lifecycle.h1", classLoader);
       // Resolve every value before exposing the proxy to LINE. If LINE changes this API, menu
@@ -887,10 +890,10 @@ public final class CallMicLevelHook implements BaseHook {
   }
 
   private static Object newConstantLiveData(Class<?> liveDataClass, Object value) {
-    if (NativeCallBridge.isLine26171()) {
+    if (NativeCallBridge.isLine26171() || NativeCallBridge.isLine26182()) {
       // The current MutableLiveData exposes only a no-arg constructor and inherits setValue.
       Object liveData = Reflect.newInstance(liveDataClass);
-      Reflect.callMethod(liveData, "u", value);
+      Reflect.callMethod(liveData, NativeCallBridge.isLine26182() ? "r" : "u", value);
       return liveData;
     }
     try {
@@ -1013,7 +1016,9 @@ public final class CallMicLevelHook implements BaseHook {
         activity.getResources().getIdentifier("main_content", "id", activity.getPackageName());
     if (mainContentId == 0) return null;
     // AndroidX's findFragmentById is obfuscated in LINE's build.
-    return Reflect.callMethod(manager, NativeCallBridge.isLine26171() ? "J" : "I", mainContentId);
+    String findFragment =
+        NativeCallBridge.isLine26182() ? "K" : NativeCallBridge.isLine26171() ? "J" : "I";
+    return Reflect.callMethod(manager, findFragment, mainContentId);
   }
 
   private static void captureCallChat(Activity activity) {

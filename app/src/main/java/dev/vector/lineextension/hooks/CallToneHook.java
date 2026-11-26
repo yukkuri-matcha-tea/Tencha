@@ -15,7 +15,8 @@ public final class CallToneHook implements BaseHook {
   public void hook(VectorConfig config, LoadParam param) {
     if (!NativeCallBridge.uses2615CallApi()) return;
     ClassLoader loader = param.classLoader;
-    String uriToneSource = NativeCallBridge.isLine26171() ? "x30.b" : "a40.b";
+    String uriToneSource =
+        NativeCallBridge.isLine26171() || NativeCallBridge.isLine26182() ? "x30.b" : "a40.b";
     for (String source : new String[] {"ps7.a$a$a", "ps7.a$a$b"}) {
       try {
         Vector.module

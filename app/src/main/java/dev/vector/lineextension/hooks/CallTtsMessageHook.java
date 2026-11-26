@@ -70,7 +70,8 @@ public final class CallTtsMessageHook implements BaseHook {
     Object model = Reflect.getObjectField(session, "l");
     Object connect = Reflect.getObjectField(model, "j");
     // The connect info returns the conversation ID. The model's name fields are display labels.
-    String idMethod = NativeCallBridge.isLine26171() ? "s" : "q";
+    String idMethod =
+        NativeCallBridge.isLine26182() ? "u" : NativeCallBridge.isLine26171() ? "s" : "q";
     CallTtsManager.setCallGroupChatId((String) Reflect.callMethod(connect, idMethod));
   }
 

@@ -18,7 +18,7 @@ final class NativeCallBridge {
     // 26.15 uses the same validated recording callback signature. Installation is deliberately
     // lazy: it occurs only after the call is connected and the user presses a soundboard button
     // or enables remote TTS. Never install it from AudioControl construction.
-    return "26.14.0".equals(version) || uses2615CallApi();
+    return "26.14.0".equals(version) || uses2615CallApi(version);
   }
 
   static boolean uses2615CallApi() {
@@ -26,15 +26,23 @@ final class NativeCallBridge {
   }
 
   static boolean uses2615CallApi(String version) {
-    // The arm64 library is SHA-256 identical across these builds. Java hooks use separate mappings.
     return "26.15.0".equals(version)
         || "26.15.1".equals(version)
         || "26.16.0".equals(version)
-        || "26.17.1".equals(version);
+        || "26.17.1".equals(version)
+        || isLine26182(version);
   }
 
   static boolean isLine26171() {
     return "26.17.1".equals(LineVersion.getResolvedVersionName());
+  }
+
+  static boolean isLine26182() {
+    return isLine26182(LineVersion.getResolvedVersionName());
+  }
+
+  private static boolean isLine26182(String version) {
+    return "26.18.2".equals(version);
   }
 
   static synchronized boolean ensureLoaded(Context context) {
@@ -88,7 +96,7 @@ final class NativeCallBridge {
     if (!supportsRecordingMixer() || pcm == null || pcm.length == 0 || !ensureLoaded(context))
       return false;
     try {
-      return nativeInstallSoundboardMixer() && nativeEnqueueSoundboard(pcm, key);
+      return installSoundboardMixer() && nativeEnqueueSoundboard(pcm, key);
     } catch (Throwable error) {
       Log.e("TenchaCall", "Soundboard PCM enqueue failed", error);
       Vector.log("Tencha: soundboard PCM enqueue failed", error);
@@ -99,7 +107,7 @@ final class NativeCallBridge {
   static boolean prepareSoundboard(Context context) {
     if (!supportsRecordingMixer() || context == null || !ensureLoaded(context)) return false;
     try {
-      return nativeInstallSoundboardMixer();
+      return installSoundboardMixer();
     } catch (Throwable error) {
       Log.e("TenchaCall", "Soundboard PCM mixer installation failed", error);
       return false;
@@ -119,7 +127,7 @@ final class NativeCallBridge {
     if (!supportsRecordingMixer() || pcm == null || pcm.length == 0 || !ensureLoaded(context))
       return false;
     try {
-      return nativeInstallSoundboardMixer() && nativeEnqueueTts(pcm);
+      return installSoundboardMixer() && nativeEnqueueTts(pcm);
     } catch (Throwable error) {
       Log.e("TenchaCall", "TTS PCM enqueue failed", error);
       return false;
@@ -142,7 +150,7 @@ final class NativeCallBridge {
     if (!muted && !available) return true;
     if (context == null || !ensureLoaded(context)) return false;
     try {
-      if (muted && !nativeInstallSoundboardMixer()) return false;
+      if (muted && !installSoundboardMixer()) return false;
       nativeSetPhysicalMicMuted(muted);
       return true;
     } catch (Throwable error) {
@@ -163,7 +171,11 @@ final class NativeCallBridge {
   private static native boolean nativeSetParticipantVolume(
       long audioSessionStream, String participantId, float multiplier);
 
-  private static native boolean nativeInstallSoundboardMixer();
+  private static boolean installSoundboardMixer() {
+    return nativeInstallSoundboardMixer(isLine26182());
+  }
+
+  private static native boolean nativeInstallSoundboardMixer(boolean line26182);
 
   private static native boolean nativeEnqueueSoundboard(short[] pcm, String key);
 

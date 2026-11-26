@@ -867,7 +867,8 @@ public final class OtherProfileViewerHook implements BaseHook {
     if (state != null) return true;
     try {
       Object base = Reflect.getObjectField(activity, cfg.profileViewer.profileViewModelField);
-      return !Boolean.TRUE.equals(Reflect.getObjectField(base, "m"));
+      return Boolean.FALSE.equals(
+          Reflect.getObjectField(base, cfg.profileViewer.baseOwnProfileField));
     } catch (Throwable ignored) {
       return false;
     }

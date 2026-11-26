@@ -10,12 +10,19 @@ LINEヤフー株式会社とは無関係です。LINE更新による非互換、
 
 [GitHub Releases](https://github.com/yukkuri-matcha-tea/Tencha/releases/latest)で配布しています。
 
-- [root向けAPK](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.1.0/Tencha-root-2.1.0.apk)
-- [非root向けセット](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.1.0/Tencha-rootless-kit-2.1.0.zip)。モジュール、LSPatch、作成用スクリプト、説明書を同梱。
-- [非root向けモジュール単体](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.1.0/Tencha-rootless-module-2.1.0.apk)
-- [SHA-256チェックサム](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.1.0/Tencha-2.1.0-SHA256SUMS.txt)
+- [root向けAPK](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.1.1/Tencha-root-2.1.1.apk)
+- [非root向けセット](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.1.1/Tencha-rootless-kit-2.1.1.zip)。モジュール、LSPatch、作成用スクリプト、説明書を同梱。
+- [非root向けモジュール単体](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.1.1/Tencha-rootless-module-2.1.1.apk)
+- [SHA-256チェックサム](https://github.com/yukkuri-matcha-tea/Tencha/releases/download/v2.1.1/Tencha-2.1.1-SHA256SUMS.txt)
 
 root向け・非root向けモジュールAPKは同じ内容で、導入方法が異なります。パッチ済みLINE APKは配布しません。
+
+## 2.1.1の変更
+
+- LINE 26.18.2の設定、トーク、プロフィール、通話の参照先を更新。
+- 既読回避中の手動既読と、自分のプロフィールの判定を26.18.2に合わせて修正。
+
+APKの宣言221件と単体テスト93件が通過しました。確認した範囲を[LINE 26.18.2の検証記録](docs/line-26.18.2-compatibility.md)に記載しています。
 
 ## 2.1.0の変更
 
@@ -51,7 +58,9 @@ LINE内の **Tencha → モジュール設定 → 通話** に、サウンドボ
 
 ## 対応環境
 
-2.1.0ではLINE **26.17.1（261710173）** と **26.16.0（261600106）** の対応表を追加しています。[26.17.1の解析・検証記録](docs/line-26.17.1-compatibility.md)、[26.16.0の解析・検証記録](docs/line-26.16.0-compatibility.md)。
+2.1.1ではLINE **26.18.2（261820153）** の対応表を追加しています。[26.18.2の解析・検証記録](docs/line-26.18.2-compatibility.md)
+
+2.1.0で追加したLINE **26.17.1（261710173）** と **26.16.0（261600106）** の対応表も同梱しています。[26.17.1の解析・検証記録](docs/line-26.17.1-compatibility.md)、[26.16.0の解析・検証記録](docs/line-26.16.0-compatibility.md)
 
 - Android 8.0以降、arm64-v8a
 - 対象アプリ：LINE（`jp.naver.line.android`）

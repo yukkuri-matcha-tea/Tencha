@@ -272,6 +272,20 @@ public class LineVersionCompatibilityTest {
   }
 
   @Test
+  public void line26182UsesItsOwnSettingsChatAndCallMappings() {
+    LineVersion.Config current = LineVersion.resolveVersion("26.18.2", name -> false);
+    assertNotNull(current);
+    assertEquals("26.18.2", LineVersion.getResolvedVersionName());
+    assertEquals("wj8.f", current.settings.settingsAdapterClass);
+    assertEquals("c", current.plusMenu.methodCreateMenu);
+    assertEquals("X0", current.thrift.v1);
+    assertEquals("v7", current.profileViewer.methodSaveDecorations);
+    assertEquals("fe1.f$b", current.messageEditHistory.menuActionLambdaClass);
+    assertEquals("s18.e", current.classAliases.get("vw7.e"));
+    assertNull(LineVersion.resolveVersion("26.18.1", name -> true));
+  }
+
+  @Test
   public void line26171ResolvesItsOwnHookFamiliesWithoutChangingThePreviousVersion() {
     LineVersion.Config current =
         LineVersion.resolveVersion("LINE/26.17.1 (261710173)", name -> false);

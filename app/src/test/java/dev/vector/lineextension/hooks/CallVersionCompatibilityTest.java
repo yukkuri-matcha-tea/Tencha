@@ -14,6 +14,8 @@ public class CallVersionCompatibilityTest {
     assertFalse(NativeCallBridge.uses2615CallApi("26.17.0"));
     assertTrue(NativeCallBridge.uses2615CallApi("26.17.1"));
     assertFalse(NativeCallBridge.uses2615CallApi("26.17.2"));
+    assertTrue(NativeCallBridge.uses2615CallApi("26.18.2"));
+    assertFalse(NativeCallBridge.uses2615CallApi("26.18.1"));
     assertFalse(NativeCallBridge.uses2615CallApi("26.14.0"));
     assertFalse(NativeCallBridge.uses2615CallApi("26.15.2"));
     assertFalse(NativeCallBridge.uses2615CallApi(null));

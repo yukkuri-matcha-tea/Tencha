@@ -38,7 +38,8 @@ public class ReadReceiptHandler implements BaseHook {
     ClassLoader cl = lpparam.classLoader;
 
     if ("26.16.0".equals(LineVersion.getResolvedVersionName())
-        || "26.17.1".equals(LineVersion.getResolvedVersionName())) {
+        || "26.17.1".equals(LineVersion.getResolvedVersionName())
+        || "26.18.2".equals(LineVersion.getResolvedVersionName())) {
       // Validate required interception points before reporting successful registration.
       Reflect.findMethodExact(
           cfg.thrift.talkServiceClientImplClass,
@@ -222,9 +223,8 @@ public class ReadReceiptHandler implements BaseHook {
   }
 
   private boolean shouldRememberManualRead(LineVersion.Config cfg) {
-    String manualClass = cfg.readReceipt.longPressReadClass;
-    boolean manual = manualClass != null && !manualClass.isEmpty() && isFromClass(manualClass);
-    return manual || SettingsStore.get("send_mark_state", false);
+    if (SettingsStore.get("send_mark_state", false)) return true;
+    return isFromClass(cfg.readReceipt.manualReadCallerClasses);
   }
 
   private void hookReadAll(Class<?> managerCls, LineVersion.Config cfg, VectorConfig config) {
@@ -259,10 +259,14 @@ public class ReadReceiptHandler implements BaseHook {
         && SettingsStore.get("prevent_read_state", true);
   }
 
-  private boolean isFromClass(String prefix) {
+  private boolean isFromClass(String[] prefixes) {
+    if (prefixes.length == 0) return false;
     for (StackTraceElement el : Thread.currentThread().getStackTrace()) {
       String n = el.getClassName();
-      if (n.equals(prefix) || n.startsWith(prefix + "$") || n.startsWith(prefix + ".")) return true;
+      for (String prefix : prefixes) {
+        if (n.equals(prefix) || n.startsWith(prefix + "$") || n.startsWith(prefix + "."))
+          return true;
+      }
     }
     return false;
   }

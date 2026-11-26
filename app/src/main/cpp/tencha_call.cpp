@@ -160,6 +160,7 @@ void addUnique(std::vector<std::string>* values, const char* value) {
 }
 
 constexpr std::uintptr_t kRecordCallbackOffset = 0x441f1c;
+constexpr std::uintptr_t kRecordCallbackOffset26182 = 0x449b8c;
 constexpr int kSoundboardSampleRate = 16000;
 
 std::mutex soundboardMutex;
@@ -258,7 +259,7 @@ void writeAbsoluteJump(void* destination, const void* target) {
               sizeof(address));
 }
 
-bool installSoundboardHook() {
+bool installSoundboardHook(bool line26182) {
   std::lock_guard<std::mutex> guard(hookMutex);
   if (originalRecordCallback != nullptr) return true;
 
@@ -268,8 +269,20 @@ bool installSoundboardHook() {
     __android_log_print(ANDROID_LOG_ERROR, kTag, "libandromeda mapping not found");
     return false;
   }
-  auto* target = reinterpret_cast<void*>(andromedaBase + kRecordCallbackOffset);
-  // Verified against LINE 26.14.0 / 26.15.0; 26.15.1 has the identical arm64 library.
+  auto* target = reinterpret_cast<void*>(
+      andromedaBase + (line26182 ? kRecordCallbackOffset26182 : kRecordCallbackOffset));
+  if (line26182) {
+    // The 26.18.2 ELF exports this symbol. Verify the address as well as the trampoline bytes.
+    Dl_info info{};
+    constexpr const char* kRecordCallbackSymbol =
+        "_Z14callbackRecordPKPK30SLAndroidSimpleBufferQueueItf_Pv";
+    if (dladdr(target, &info) == 0 || info.dli_saddr != target || info.dli_sname == nullptr ||
+        std::strcmp(info.dli_sname, kRecordCallbackSymbol) != 0) {
+      __android_log_print(ANDROID_LOG_ERROR, kTag, "Recording callback symbol changed");
+      return false;
+    }
+  }
+  // Both mappings were checked against the native recording callback for their APK.
   const std::uint32_t expected[] = {0xD10183FFU, 0xA9037BFDU, 0xF90023F5U, 0xA9054FF4U};
   if (std::memcmp(target, expected, sizeof(expected)) != 0) {
     __android_log_print(ANDROID_LOG_ERROR, kTag, "Recording callback signature changed");
@@ -305,8 +318,9 @@ bool installSoundboardHook() {
 }  // namespace
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_dev_vector_lineextension_hooks_NativeCallBridge_nativeInstallSoundboardMixer(JNIEnv*, jclass) {
-  return installSoundboardHook() ? JNI_TRUE : JNI_FALSE;
+Java_dev_vector_lineextension_hooks_NativeCallBridge_nativeInstallSoundboardMixer(
+    JNIEnv*, jclass, jboolean line26182) {
+  return installSoundboardHook(line26182 == JNI_TRUE) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

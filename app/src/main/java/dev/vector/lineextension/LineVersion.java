@@ -222,6 +222,7 @@ public class LineVersion {
       public String popupClass = "";
       public String analyticsClass = "";
       public String profileViewModelField = "";
+      public String baseOwnProfileField = "m";
       public String ownProfileField = "";
       public String controllerRendererField = "";
       public String controllerDecoViewModelField = "";
@@ -366,7 +367,7 @@ public class LineVersion {
       public String methodReadAll = "";
       public String methodResolveReadTarget = "";
       public String operationNotifiedReadName = "NOTIFIED_READ_MESSAGE";
-      public String longPressReadClass = "";
+      public String[] manualReadCallerClasses = {};
     }
 
     public static class Unsend {
@@ -677,6 +678,7 @@ public class LineVersion {
     VERSION_TABLE.put("26.15.1", dev.vector.lineextension.versions.Version26151.create());
     VERSION_TABLE.put("26.16.0", dev.vector.lineextension.versions.Version26160.create());
     VERSION_TABLE.put("26.17.1", dev.vector.lineextension.versions.Version26171.create());
+    VERSION_TABLE.put("26.18.2", dev.vector.lineextension.versions.Version26182.create());
   }
 
   private static volatile Config cachedConfig = null;
